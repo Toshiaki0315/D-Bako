@@ -45,12 +45,12 @@ jobs:
       - name: cargo test
         working-directory: src-tauri
         run: cargo test
-      # Tauri 依存の薄い層 (main.rs / lib.rs) とネットワーク実装 (net.rs) は計測対象外。core 等の純粋ロジックで 90% を要求
+      # Tauri 依存の薄い層 (main.rs / lib.rs / menu.rs) とネットワーク実装 (net.rs) は計測対象外。core 等の純粋ロジックで 90% を要求
       - name: Coverage (>= 90% lines)
         working-directory: src-tauri
         run: >
           cargo llvm-cov --lib
-          --ignore-filename-regex 'main\.rs|lib\.rs|net\.rs'
+          --ignore-filename-regex 'main\.rs|lib\.rs|menu\.rs|net\.rs'
           --fail-under-lines 90
           --lcov --output-path lcov.info
       - uses: actions/upload-artifact@v4

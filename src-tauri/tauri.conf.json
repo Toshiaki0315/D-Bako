@@ -29,7 +29,8 @@
         "resizable": true,
         "maximizable": false,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": false,
+        "theme": "Dark"
       }
     ],
     "security": {

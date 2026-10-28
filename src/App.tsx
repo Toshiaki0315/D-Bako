@@ -10,6 +10,8 @@ import { AppIcon } from "./components/AppIcon";
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
 type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
 
+type Settings = { always_on_top: boolean };
+
 type TipState = { name: string; x: number; y: number };
 
 /** マウスの近くに出るアプリ名の吹き出し。 */
@@ -68,12 +70,58 @@ function UrlDialog({ onSubmit, onClose }: { onSubmit: (input: string) => Promise
   );
 }
 
+/** メニューバーの「設定…」から開く設定ダイアログ。変更はその場で反映・保存される。 */
+function SettingsDialog({ onClose }: { onClose: () => void }) {
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    invoke<Settings>("get_settings").then(setSettings);
+  }, []);
+
+  /** 先に見た目を切り替え、保存・反映に失敗したら元に戻す。 */
+  async function toggleAlwaysOnTop(enabled: boolean) {
+    setSettings({ always_on_top: enabled });
+    setError(null);
+    try {
+      await invoke("set_always_on_top", { enabled });
+    } catch (err) {
+      setSettings({ always_on_top: !enabled });
+      setError(String(err));
+    }
+  }
+
+  return (
+    <div className="backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div role="dialog" aria-label="設定" className="dialog settings" onClick={(e) => e.stopPropagation()}>
+        <h2 className="dialog-title">設定</h2>
+        {settings && (
+          <label className="setting-row">
+            <input
+              type="checkbox"
+              autoFocus
+              checked={settings.always_on_top}
+              onChange={(e) => toggleAlwaysOnTop(e.target.checked)}
+            />
+            常に前に表示
+          </label>
+        )}
+        {error && <p className="dialog-error">変更できません: {error}</p>}
+        <div className="dialog-actions">
+          <button type="button" className="text-button" onClick={onClose}>閉じる</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [tip, setTip] = useState<TipState | null>(null);
   const [dialogSlot, setDialogSlot] = useState<number | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   /** 登録系の操作を実行し、失敗したら理由を表示する。どちらの場合も最新の状態を読み直す。 */
   async function register(action: () => Promise<unknown>) {
@@ -101,6 +149,12 @@ export default function App() {
     });
     return () => { unlisten.then(f => f()); };
   }, [currentPage]);
+
+  // メニューバーの「設定…」(⌘,) は Rust 側からイベントで届く
+  useEffect(() => {
+    const unlisten = listen("open-settings", () => setSettingsOpen(true));
+    return () => { unlisten.then(f => f()); };
+  }, []);
 
   // URL を貼り付け (Cmd+V) ると、現在のページの最初の空きスロットに登録する。入力欄への貼り付けは対象外。
   useEffect(() => {
@@ -137,20 +191,22 @@ export default function App() {
   return (
     <div className="container">
       <div className="drag-region" data-tauri-drag-region />
-      <div className="grid">
-        {currentSlots.map((app, i) => (
-          <div
-            key={i}
-            className={`slot ${app ? 'filled' : ''}`}
-            role={app ? "button" : undefined}
-            aria-label={app?.name}
-            onClick={() => (app ? handleLaunch(app) : setDialogSlot(i))}
-            onMouseMove={app ? (e) => setTip({ name: app.name, x: e.clientX, y: e.clientY }) : undefined}
-            onMouseLeave={app ? () => setTip(null) : undefined}
-          >
-            {app ? <AppIcon key={app.path} path={app.path} name={app.name} kind={app.kind} icon={app.icon} /> : <div className="slot-number">{i + 1}</div>}
-          </div>
-        ))}
+      <div className="grid-area">
+        <div className="grid">
+          {currentSlots.map((app, i) => (
+            <div
+              key={i}
+              className={`slot ${app ? 'filled' : ''}`}
+              role={app ? "button" : undefined}
+              aria-label={app?.name}
+              onClick={() => (app ? handleLaunch(app) : setDialogSlot(i))}
+              onMouseMove={app ? (e) => setTip({ name: app.name, x: e.clientX, y: e.clientY }) : undefined}
+              onMouseLeave={app ? () => setTip(null) : undefined}
+            >
+              {app ? <AppIcon key={app.path} path={app.path} name={app.name} kind={app.kind} icon={app.icon} /> : <div className="slot-number">{i + 1}</div>}
+            </div>
+          ))}
+        </div>
       </div>
       {tip && <Tooltip {...tip} />}
       {error && <p role="alert" className="error">登録できません: {error}</p>}
@@ -160,6 +216,7 @@ export default function App() {
         <button aria-label="Next page" onClick={() => setCurrentPage(p => clampPage(p + 1, state.max_pages))} disabled={currentPage >= state.max_pages - 1}><Chevron direction="right" /></button>
       </div>
       {dialogSlot !== null && <UrlDialog onSubmit={(input) => submitUrl(dialogSlot, input)} onClose={() => setDialogSlot(null)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

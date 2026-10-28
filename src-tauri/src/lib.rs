@@ -2,8 +2,10 @@ pub mod core;
 pub mod favicon;
 pub mod icon;
 pub mod link;
+pub mod menu;
 pub mod net;
 pub mod service;
+pub mod settings;
 pub mod storage;
 pub mod window;
 use std::sync::Mutex;
@@ -11,9 +13,10 @@ use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
 use core::{AppItem, LauncherState};
 use service::LauncherService;
+use settings::{Settings, SettingsService};
 use storage::{StateStore, StdFs};
 
-struct AppState { launcher: Mutex<LauncherService<StdFs>> }
+struct AppState { launcher: Mutex<LauncherService<StdFs>>, settings: Mutex<SettingsService<StdFs>> }
 
 #[tauri::command]
 fn get_state(state: State<'_, AppState>) -> LauncherState { state.launcher.lock().unwrap().state().clone() }
@@ -71,6 +74,16 @@ async fn add_url_file_to_first_empty(page_idx: usize, path: String, state: State
     state.launcher.lock().unwrap().add_app_to_first_empty(page_idx, item)
 }
 
+#[tauri::command]
+fn get_settings(state: State<'_, AppState>) -> Settings { state.settings.lock().unwrap().settings().clone() }
+
+/// 保存できてからウィンドウに反映する (次回起動時の状態と食い違わないように)。
+#[tauri::command]
+fn set_always_on_top(enabled: bool, window: tauri::WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+    state.settings.lock().unwrap().set_always_on_top(enabled)?;
+    window.set_always_on_top(enabled).map_err(|e| e.to_string())
+}
+
 /// アイコン抽出はファイル I/O を伴うため、UI/非同期ランタイムを塞がないよう別スレッドで実行する。
 #[tauri::command]
 async fn get_app_icon(path: String) -> Result<String, String> {
@@ -97,6 +110,8 @@ fn lock_aspect_ratio(window: &tauri::WebviewWindow) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .menu(menu::build)
+        .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
         .setup(|app| {
             let window = app.get_webview_window("main").ok_or("main window not found")?;
             let (min_w, min_h) = window::min_size();
@@ -104,10 +119,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             lock_aspect_ratio(&window)?;
 
-            // 状態は OS 標準のアプリデータ領域 (~/Library/Application Support/<identifier>) に保存する
-            let path = app.path().app_data_dir()?.join("state.json");
-            let launcher = LauncherService::open(StateStore::new(StdFs, path));
-            app.manage(AppState { launcher: Mutex::new(launcher) });
+            // 状態と設定は OS 標準のアプリデータ領域 (~/Library/Application Support/<identifier>) に保存する
+            let data_dir = app.path().app_data_dir()?;
+            let launcher = LauncherService::open(StateStore::new(StdFs, data_dir.join("state.json")));
+            let settings = SettingsService::open(StdFs, data_dir.join("settings.json"));
+            window.set_always_on_top(settings.settings().always_on_top)?;
+            app.manage(AppState { launcher: Mutex::new(launcher), settings: Mutex::new(settings) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -117,7 +134,9 @@ pub fn run() {
             add_url_to_slot,
             add_url_file_to_first_empty,
             launch_app,
-            get_app_icon
+            get_app_icon,
+            get_settings,
+            set_always_on_top
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

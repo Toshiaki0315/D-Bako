@@ -6,7 +6,9 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 .container { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 0 0.75rem 0.875rem; }
 /* オーバーレイ式タイトルバーの領域。信号ボタンの裏を含め、ここを掴んでウィンドウを動かす */
 .drag-region { flex: none; height: max(28px, 2.5rem); margin: 0 -0.75rem; }
-.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; align-content: center; gap: 0.375rem; }
+/* グリッドの置き場。ここを寸法の基準 (コンテナ) にして、スロットが幅と高さのどちらにも収まる大きさにする */
+.grid-area { flex: 1; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
+.grid { --gap: 0.375rem; --slot: min(calc((100cqw - 3 * var(--gap)) / 4), calc((100cqh - var(--gap)) / 2)); display: grid; grid-template-columns: repeat(4, var(--slot)); grid-auto-rows: var(--slot); gap: var(--gap); }
 /* スロットは正方形でセル幅いっぱい。登録済みアイコンと空きスロットの大きさが一致する */
 .slot { position: relative; box-sizing: border-box; aspect-ratio: 1; align-self: center; background-color: #2a2a2a; border: 0.125rem dashed #444; border-radius: 0.875rem; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; }
 .slot:hover { background-color: #333; border-color: #666; }
@@ -22,11 +24,12 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 /* アプリ名: マウス位置に追従する吹き出し (座標は App.tsx から指定) */
 .tooltip { position: fixed; max-width: 11.25rem; padding: 0.3125rem 0.625rem; border-radius: 0.375rem; background: #f2f2f2; color: #1e1e1e; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 10; box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.4); }
 .error { margin: 0.625rem 0 0; color: #ff8a80; font-size: 0.75rem; text-align: center; }
-.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 1rem; padding-top: 0.75rem; font-size: 0.8125rem; color: #aaa; }
-button { display: flex; align-items: center; justify-content: center; width: 2.125rem; height: 2.125rem; padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
-button svg { width: 1rem; height: 1rem; }
-button:hover { background: #4a4a4a; }
-button:disabled { background: #252525; color: #555; cursor: not-allowed; }
+/* ページ移動は操作しやすさを優先し、ウィンドウの大きさに関係なく固定サイズ (px) で表示する */
+.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 10px; font-size: 15px; color: #bbb; font-variant-numeric: tabular-nums; }
+.pager button { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
+.pager button svg { width: 20px; height: 20px; }
+.pager button:hover { background: #4a4a4a; }
+.pager button:disabled { background: #252525; color: #555; cursor: not-allowed; }
 /* URL ショートカット: 透明な余白を持たない小さな画像なので、スロットいっぱいのタイルの中に収める */
 .slot.filled .app-icon-favicon, .slot.filled .app-icon-letter { left: 0; top: 0; width: 100%; height: 100%; }
 .app-icon-favicon { box-sizing: border-box; padding: 24%; background: #f2f2f2; border-radius: 22%; object-fit: contain; }
@@ -38,3 +41,12 @@ button:disabled { background: #252525; color: #555; cursor: not-allowed; }
 .dialog input:focus { border-color: #4a90e2; }
 .dialog input:disabled { opacity: 0.6; }
 .dialog-error { margin: 0.5rem 0 0; color: #ff8a80; font-size: 0.75rem; }
+/* 設定ダイアログ: 小さなウィンドウでも読めるよう固定サイズ (px) で表示する */
+.dialog.settings { width: min(300px, 85%); padding: 16px; }
+.dialog-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+.setting-row { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.setting-row input { margin: 0; accent-color: #4a90e2; }
+.settings .dialog-error { font-size: 12px; }
+.dialog-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+.text-button { padding: 5px 14px; border: none; border-radius: 6px; background: #3a3a3a; color: #fff; font-size: 13px; cursor: pointer; }
+.text-button:hover { background: #4a4a4a; }

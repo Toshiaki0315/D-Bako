@@ -22,6 +22,16 @@ impl FileSystem for StdFs {
     fn create_dir_all(&self, path: &Path) -> io::Result<()> { std::fs::create_dir_all(path) }
 }
 
+/// 一時ファイルへ書いてから rename することで、書き込み途中の破損を避ける。親ディレクトリも作る。
+pub fn write_atomic<F: FileSystem>(fs: &F, path: &Path, contents: &str) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        fs.create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    fs.write(&tmp, contents).map_err(|e| e.to_string())?;
+    fs.rename(&tmp, path).map_err(|e| e.to_string())
+}
+
 pub struct StateStore<F: FileSystem> {
     pub(crate) fs: F,
     path: PathBuf,
@@ -45,15 +55,8 @@ impl<F: FileSystem> StateStore<F> {
         self.fs.rename(&self.path, &backup).map_err(|e| e.to_string())
     }
 
-    /// 一時ファイルへ書いてから rename することで、書き込み途中の破損を避ける。
     pub fn save(&self, state: &LauncherState) -> Result<(), String> {
-        let json = state.to_json()?;
-        if let Some(dir) = self.path.parent() {
-            self.fs.create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        let tmp = self.path.with_extension("json.tmp");
-        self.fs.write(&tmp, &json).map_err(|e| e.to_string())?;
-        self.fs.rename(&tmp, &self.path).map_err(|e| e.to_string())
+        write_atomic(&self.fs, &self.path, &state.to_json()?)
     }
 }
 

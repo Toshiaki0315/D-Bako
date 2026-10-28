@@ -40,3 +40,10 @@ AIエージェント（Claude）は、このタスクリストを上から順に
 - [x] 3. [Test->Impl] favicon 取得（`favicon.rs`、HTTP をトレイト化してモックテスト。実通信は `net.rs` で `cargo test -- --ignored live`）
 - [x] 4. [Test->Impl] Tauri コマンド（`add_url_to_first_empty` / `add_url_to_slot` / `add_url_file_to_first_empty`）と起動対象の検証
 - [x] 5. [Test->Impl] フロントエンド（貼り付け Cmd+V、空きスロットのクリックで入力、`.webloc` / `.url` のドロップ、favicon・頭文字アイコン）(完了。実機でのキー入力による登録は未確認)
+
+## Phase 7: メニュー・設定・表示の調整
+- [x] 1. [Test->Impl] 設定の永続化（`settings.rs`、`settings.json`。欠けた項目・壊れたファイルは既定値、保存失敗時はメモリも変えない）。保存処理は `storage::write_atomic` に共通化
+- [x] 2. メニューバーの日本語化と「設定…」(⌘,) の追加（`menu.rs`、Tauri 依存のためカバレッジ対象外）
+- [x] 3. [Test->Impl] 設定ダイアログと「常に前に表示」（`get_settings` / `set_always_on_top`、起動時にも適用）(実機でのメニュー操作・チェック切り替えは未確認)
+- [x] 4. タイトルバーに「道具箱」を表示（ウィンドウはダークテーマに固定）
+- [x] 5. ページ移動を固定サイズ (px) で表示し、グリッドは幅・高さの両方に収まる大きさに変更（最小サイズでの表示を実機で確認）
