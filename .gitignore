@@ -5,7 +5,6 @@ dist-ssr/
 
 # Rust
 target/
-Cargo.lock
 
 # macOS
 .DS_Store
