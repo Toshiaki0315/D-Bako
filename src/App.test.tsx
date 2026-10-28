@@ -124,6 +124,30 @@ describe("App", () => {
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("get_state"));
   });
 
+  it("ignores a drop that contains no .app bundle", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+
+    await drop(["/tmp/readme.txt"]);
+
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the reason when registering fails, and clears it on success", async () => {
+    await renderApp();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "add_app_to_first_empty") throw "No empty slot on this page";
+      return makeState();
+    });
+
+    await drop(["/Applications/Bar.app"]);
+    expect(await screen.findByRole("alert")).toHaveTextContent("No empty slot on this page");
+
+    invokeMock.mockImplementation(async () => makeState());
+    await drop(["/Applications/Bar.app"]);
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
   it("ignores a drop without paths", async () => {
     await renderApp();
     invokeMock.mockClear();

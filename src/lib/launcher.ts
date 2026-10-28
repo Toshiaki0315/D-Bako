@@ -1,7 +1,6 @@
-/** ドロップされたパス群から登録対象を選ぶ。`.app` を優先し、無ければ先頭を返す。 */
+/** ドロップされたパス群から登録対象の `.app` バンドルを選ぶ。無ければ null。 */
 export function pickAppPath(paths: string[]): string | null {
-  if (paths.length === 0) return null;
-  return paths.find((p) => p.endsWith(".app")) ?? paths[0];
+  return paths.find((p) => p.endsWith(".app")) ?? null;
 }
 
 /** ページ番号を 0 〜 maxPages-1 の範囲に収める。 */

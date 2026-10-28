@@ -12,8 +12,8 @@ describe("pickAppPath", () => {
     );
   });
 
-  it("falls back to the first path when no .app is present", () => {
-    expect(pickAppPath(["/tmp/a.txt", "/tmp/b.txt"])).toBe("/tmp/a.txt");
+  it("returns null when no .app bundle is present", () => {
+    expect(pickAppPath(["/tmp/a.txt", "/tmp/b.txt"])).toBeNull();
   });
 });
 

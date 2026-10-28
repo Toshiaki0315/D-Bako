@@ -10,6 +10,7 @@ type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
 export default function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchState();
@@ -17,7 +18,12 @@ export default function App() {
     const unlisten = listen('tauri://drop', async (event: any) => {
       const appPath = pickAppPath(event.payload.paths ?? []);
       if (appPath) {
-        await invoke("add_app_to_first_empty", { pageIdx: currentPage, path: appPath });
+        try {
+          await invoke("add_app_to_first_empty", { pageIdx: currentPage, path: appPath });
+          setError(null);
+        } catch (e) {
+          setError(String(e));
+        }
         fetchState();
       }
     });
@@ -52,6 +58,7 @@ export default function App() {
           </div>
         ))}
       </div>
+      {error && <p role="alert" style={{marginTop: '12px', color: '#ff8a80', fontSize: '12px'}}>登録できません: {error}</p>}
       <p style={{marginTop: '20px', color: '#888', fontSize: '12px'}}>※ .app ファイルをウィンドウにドラッグ＆ドロップして登録します。</p>
     </div>
   );
