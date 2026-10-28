@@ -23,7 +23,7 @@ impl FileSystem for StdFs {
 }
 
 pub struct StateStore<F: FileSystem> {
-    fs: F,
+    pub(crate) fs: F,
     path: PathBuf,
 }
 
@@ -39,6 +39,12 @@ impl<F: FileSystem> StateStore<F> {
         }
     }
 
+    /// 読み込めなかったファイルを `.bak` に退避する (次の保存で上書きして失わないため)。
+    pub fn backup_corrupt(&self) -> Result<(), String> {
+        let backup = self.path.with_extension("json.bak");
+        self.fs.rename(&self.path, &backup).map_err(|e| e.to_string())
+    }
+
     /// 一時ファイルへ書いてから rename することで、書き込み途中の破損を避ける。
     pub fn save(&self, state: &LauncherState) -> Result<(), String> {
         let json = state.to_json()?;
@@ -51,26 +57,26 @@ impl<F: FileSystem> StateStore<F> {
     }
 }
 
+/// テスト用のインメモリ FileSystem。他モジュールのテストからも使う。
 #[cfg(test)]
-mod tests {
+pub(crate) mod mock {
     use super::*;
-    use crate::core::AppItem;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::collections::{HashMap, HashSet};
     use std::io::{Error, ErrorKind};
 
-    /// インメモリのファイルシステム。`fail_on` に操作名を入れるとその操作が失敗する。
+    /// `fail_on` に操作名を入れると、その操作が失敗する (後から切り替え可能)。
     #[derive(Default)]
-    struct MockFs {
-        files: RefCell<HashMap<PathBuf, String>>,
-        dirs: RefCell<HashSet<PathBuf>>,
-        fail_on: Option<&'static str>,
+    pub(crate) struct MockFs {
+        pub files: RefCell<HashMap<PathBuf, String>>,
+        pub dirs: RefCell<HashSet<PathBuf>>,
+        pub fail_on: Cell<Option<&'static str>>,
     }
 
     impl MockFs {
-        fn failing(op: &'static str) -> Self { Self { fail_on: Some(op), ..Default::default() } }
+        pub fn failing(op: &'static str) -> Self { let fs = Self::default(); fs.fail_on.set(Some(op)); fs }
         fn check(&self, op: &str) -> io::Result<()> {
-            if self.fail_on == Some(op) { Err(Error::new(ErrorKind::PermissionDenied, format!("{op} denied"))) } else { Ok(()) }
+            if self.fail_on.get() == Some(op) { Err(Error::new(ErrorKind::PermissionDenied, format!("{op} denied"))) } else { Ok(()) }
         }
     }
 
@@ -96,6 +102,13 @@ mod tests {
             Ok(())
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mock::MockFs;
+    use super::*;
+    use crate::core::AppItem;
 
     fn store(fs: MockFs) -> StateStore<MockFs> { StateStore::new(fs, PathBuf::from("/data/dbako/state.json")) }
 

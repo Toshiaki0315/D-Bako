@@ -1,15 +1,18 @@
 pub mod core;
 pub mod icon;
+pub mod service;
 pub mod storage;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
 use core::{AppItem, LauncherState};
+use service::LauncherService;
+use storage::{StateStore, StdFs};
 
-struct AppState { launcher: Mutex<LauncherState> }
+struct AppState { launcher: Mutex<LauncherService<StdFs>> }
 
 #[tauri::command]
-fn get_state(state: State<'_, AppState>) -> LauncherState { state.launcher.lock().unwrap().clone() }
+fn get_state(state: State<'_, AppState>) -> LauncherState { state.launcher.lock().unwrap().state().clone() }
 
 #[tauri::command]
 fn add_app_to_first_empty(page_idx: usize, path: String, state: State<'_, AppState>) -> Result<(), String> {
@@ -37,7 +40,13 @@ async fn get_app_icon(path: String) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState { launcher: Mutex::new(LauncherState::new(10)) })
+        .setup(|app| {
+            // 状態は OS 標準のアプリデータ領域 (~/Library/Application Support/<identifier>) に保存する
+            let path = app.path().app_data_dir()?.join("state.json");
+            let launcher = LauncherService::open(StateStore::new(StdFs, path));
+            app.manage(AppState { launcher: Mutex::new(launcher) });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![get_state, add_app_to_first_empty, launch_app, get_app_icon])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
