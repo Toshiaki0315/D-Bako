@@ -2,10 +2,23 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { clampPage, pickAppPath } from "./lib/launcher";
+import { tooltipPosition } from "./lib/tooltip";
 import { AppIcon } from "./components/AppIcon";
 
 type AppItem = { path: string; name: string };
 type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
+
+type TipState = { name: string; x: number; y: number };
+
+/** マウスの近くに出るアプリ名の吹き出し。 */
+function Tooltip({ name, x, y }: TipState) {
+  const { left, top, alignRight } = tooltipPosition(x, y, window.innerWidth);
+  return (
+    <div role="tooltip" className="tooltip" style={{ left, top, transform: alignRight ? "translateX(-100%)" : undefined }}>
+      {name}
+    </div>
+  );
+}
 
 function Chevron({ direction }: { direction: "left" | "right" }) {
   return (
@@ -19,6 +32,7 @@ export default function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [tip, setTip] = useState<TipState | null>(null);
 
   useEffect(() => {
     fetchState();
@@ -57,11 +71,20 @@ export default function App() {
       <div className="drag-region" data-tauri-drag-region />
       <div className="grid">
         {currentSlots.map((app, i) => (
-          <div key={i} className={`slot ${app ? 'filled' : ''}`} onClick={() => handleLaunch(app)}>
-            {app ? (<><AppIcon path={app.path} name={app.name} /><div role="tooltip" className="tooltip">{app.name}</div></>) : (<div className="slot-number">{i + 1}</div>)}
+          <div
+            key={i}
+            className={`slot ${app ? 'filled' : ''}`}
+            role={app ? "button" : undefined}
+            aria-label={app?.name}
+            onClick={() => handleLaunch(app)}
+            onMouseMove={app ? (e) => setTip({ name: app.name, x: e.clientX, y: e.clientY }) : undefined}
+            onMouseLeave={app ? () => setTip(null) : undefined}
+          >
+            {app ? <AppIcon path={app.path} name={app.name} /> : <div className="slot-number">{i + 1}</div>}
           </div>
         ))}
       </div>
+      {tip && <Tooltip {...tip} />}
       {error && <p role="alert" className="error">登録できません: {error}</p>}
       <div className="pager">
         <button aria-label="Previous page" onClick={() => setCurrentPage(p => clampPage(p - 1, state.max_pages))} disabled={currentPage === 0}><Chevron direction="left" /></button>

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -65,17 +65,41 @@ describe("App", () => {
 
   it("renders 8 slots and the registered app name", async () => {
     await renderApp();
-    expect(screen.getByText("Foo")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Foo" })).toBeInTheDocument();
     expect(document.querySelectorAll(".slot")).toHaveLength(8);
     expect(document.querySelectorAll(".slot.filled")).toHaveLength(1);
   });
 
-  it("shows the app name as a tooltip on the filled slot only", async () => {
+  it("shows the app name next to the mouse pointer and follows it", async () => {
     await renderApp();
-    const tooltips = screen.getAllByRole("tooltip");
-    expect(tooltips).toHaveLength(1);
-    expect(tooltips[0]).toHaveTextContent("Foo");
-    expect(document.querySelector(".slot.filled")).toContainElement(tooltips[0]);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+
+    const slot = screen.getByRole("button", { name: "Foo" });
+    fireEvent.mouseMove(slot, { clientX: 100, clientY: 50 });
+    const tooltip = screen.getByRole("tooltip");
+    expect(tooltip).toHaveTextContent("Foo");
+    expect(tooltip).toHaveStyle({ left: "112px", top: "68px" });
+
+    fireEvent.mouseMove(slot, { clientX: 130, clientY: 70 });
+    expect(screen.getByRole("tooltip")).toHaveStyle({ left: "142px", top: "88px" });
+
+    fireEvent.mouseLeave(slot);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("flips the tooltip to the left of the pointer near the right edge", async () => {
+    await renderApp();
+    fireEvent.mouseMove(screen.getByRole("button", { name: "Foo" }), {
+      clientX: window.innerWidth - 10,
+      clientY: 50,
+    });
+    expect(screen.getByRole("tooltip")).toHaveStyle({ transform: "translateX(-100%)" });
+  });
+
+  it("shows no tooltip for an empty slot", async () => {
+    await renderApp();
+    fireEvent.mouseMove(document.querySelector(".slot:not(.filled)")!, { clientX: 10, clientY: 10 });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("has no instruction text", async () => {
@@ -115,7 +139,7 @@ describe("App", () => {
 
   it("launches the app when a filled slot is clicked", async () => {
     await renderApp();
-    await userEvent.click(screen.getByText("Foo"));
+    await userEvent.click(screen.getByRole("button", { name: "Foo" }));
     expect(invokeMock).toHaveBeenCalledWith("launch_app", { path: foo.path });
   });
 

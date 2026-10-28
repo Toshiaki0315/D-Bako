@@ -5,7 +5,7 @@
 pub const BASE_WIDTH: f64 = 640.0;
 pub const BASE_HEIGHT: f64 = 410.0;
 /// これ以上は小さくできない幅。高さは縦横比から決まる。
-pub const MIN_WIDTH: f64 = 480.0;
+pub const MIN_WIDTH: f64 = 320.0;
 
 pub fn aspect_ratio() -> f64 { BASE_WIDTH / BASE_HEIGHT }
 
@@ -33,6 +33,12 @@ mod tests {
     fn min_size_is_smaller_than_the_base_size() {
         let (w, h) = min_size();
         assert!(w < BASE_WIDTH && h < BASE_HEIGHT);
+    }
+
+    #[test]
+    fn min_size_is_about_half_of_the_base_size() {
+        let ratio = min_size().0 / BASE_WIDTH;
+        assert!((0.45..=0.55).contains(&ratio), "ratio = {ratio}");
     }
 
     #[test]
