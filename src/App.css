@@ -1,11 +1,14 @@
+/* 1rem = ウィンドウ幅の 1/40 (幅 640px で 16px)。寸法をすべて rem で書くことで、
+   縦横比を固定したウィンドウの拡大・縮小に合わせて UI 全体が比例して拡縮する */
+html { font-size: calc(100vw / 40); }
 html, body, #root { height: 100%; }
 body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #1e1e1e; color: #fff; user-select: none; overflow: hidden; }
-.container { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 0 12px 14px; }
+.container { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 0 0.75rem 0.875rem; }
 /* オーバーレイ式タイトルバーの領域。信号ボタンの裏を含め、ここを掴んでウィンドウを動かす */
-.drag-region { flex: none; height: 40px; margin: 0 -12px; }
-.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; align-content: center; gap: 6px; }
+.drag-region { flex: none; height: 2.5rem; margin: 0 -0.75rem; }
+.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; align-content: center; gap: 0.375rem; }
 /* スロットは正方形でセル幅いっぱい。登録済みアイコンと空きスロットの大きさが一致する */
-.slot { position: relative; box-sizing: border-box; aspect-ratio: 1; align-self: center; background-color: #2a2a2a; border: 2px dashed #444; border-radius: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; }
+.slot { position: relative; box-sizing: border-box; aspect-ratio: 1; align-self: center; background-color: #2a2a2a; border: 0.125rem dashed #444; border-radius: 0.875rem; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; }
 .slot:hover { background-color: #333; border-color: #666; }
 .slot:not(.filled) { border-radius: 18%; }
 /* 登録済みスロットは枠も背景も持たず、アイコンだけを見せる */
@@ -13,14 +16,15 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 /* アイコン画像は周囲に約10%ずつ透明な余白を含む。その分をスロットの外へはみ出させ、絵そのものをスロットいっぱいにする */
 .slot.filled .app-icon { position: absolute; left: -12.5%; top: -12.5%; width: 125%; height: 125%; max-height: none; transition: transform 0.15s; }
 .slot.filled:hover .app-icon { transform: scale(1.06); }
-.slot-number { color: #555; }
+.slot-number { color: #555; font-size: 1rem; }
 .app-icon { width: 100%; height: auto; max-height: 100%; aspect-ratio: 1; object-fit: contain; }
-.app-icon-fallback { display: flex; align-items: center; justify-content: center; font-size: 56px; }
+.app-icon-fallback { display: flex; align-items: center; justify-content: center; font-size: 3.5rem; }
 /* アプリ名: ホバー時に出る吹き出し */
-.tooltip { position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translate(-50%, 4px); max-width: 180px; padding: 5px 10px; border-radius: 6px; background: #f2f2f2; color: #1e1e1e; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 10; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+.tooltip { position: absolute; left: 50%; bottom: calc(100% + 0.25rem); transform: translate(-50%, 0.25rem); max-width: 11.25rem; padding: 0.3125rem 0.625rem; border-radius: 0.375rem; background: #f2f2f2; color: #1e1e1e; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 10; box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.4); }
 .slot:hover .tooltip { opacity: 1; transform: translate(-50%, 0); }
-.error { margin: 10px 0 0; color: #ff8a80; font-size: 12px; text-align: center; }
-.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 12px; font-size: 13px; color: #aaa; }
-button { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
+.error { margin: 0.625rem 0 0; color: #ff8a80; font-size: 0.75rem; text-align: center; }
+.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 1rem; padding-top: 0.75rem; font-size: 0.8125rem; color: #aaa; }
+button { display: flex; align-items: center; justify-content: center; width: 2.125rem; height: 2.125rem; padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
+button svg { width: 1rem; height: 1rem; }
 button:hover { background: #4a4a4a; }
 button:disabled { background: #252525; color: #555; cursor: not-allowed; }

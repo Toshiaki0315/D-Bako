@@ -26,7 +26,8 @@
         "title": "\u9053\u5177\u7bb1",
         "width": 640,
         "height": 410,
-        "resizable": false,
+        "resizable": true,
+        "maximizable": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }

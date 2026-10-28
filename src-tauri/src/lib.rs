@@ -2,6 +2,7 @@ pub mod core;
 pub mod icon;
 pub mod service;
 pub mod storage;
+pub mod window;
 use std::sync::Mutex;
 use tauri::{Manager, State};
 use tauri_plugin_shell::ShellExt;
@@ -36,11 +37,29 @@ async fn get_app_icon(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// リサイズ中も縦横比を保つ (tao には API が無いので NSWindow に直接設定する)。
+#[cfg(target_os = "macos")]
+fn lock_aspect_ratio(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use objc2_app_kit::NSWindow;
+    use objc2_foundation::NSSize;
+    let ptr = window.ns_window()? as *mut NSWindow;
+    // SAFETY: ns_window() は生きている NSWindow を指す。setup はメインスレッドで呼ばれる。
+    let ns_window = unsafe { &*ptr };
+    ns_window.setContentAspectRatio(NSSize::new(window::BASE_WIDTH, window::BASE_HEIGHT));
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            let window = app.get_webview_window("main").ok_or("main window not found")?;
+            let (min_w, min_h) = window::min_size();
+            window.set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))?;
+            #[cfg(target_os = "macos")]
+            lock_aspect_ratio(&window)?;
+
             // 状態は OS 標準のアプリデータ領域 (~/Library/Application Support/<identifier>) に保存する
             let path = app.path().app_data_dir()?.join("state.json");
             let launcher = LauncherService::open(StateStore::new(StdFs, path));
