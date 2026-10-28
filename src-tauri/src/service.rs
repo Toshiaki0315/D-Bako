@@ -31,6 +31,10 @@ impl<F: FileSystem> LauncherService<F> {
         Ok(())
     }
 
+    pub fn add_app_to_slot(&mut self, page_idx: usize, slot_idx: usize, app: AppItem) -> Result<(), String> {
+        self.mutate(|s| s.add_app_to_empty_slot(page_idx, slot_idx, app))
+    }
+
     pub fn add_app_to_first_empty(&mut self, page_idx: usize, app: AppItem) -> Result<(), String> {
         self.mutate(|s| s.add_app_to_first_empty(page_idx, app))
     }
@@ -44,7 +48,7 @@ mod tests {
 
     const STATE_PATH: &str = "/data/dbako/state.json";
 
-    fn item(n: &str) -> AppItem { AppItem { path: format!("/{n}.app"), name: n.into() } }
+    fn item(n: &str) -> AppItem { AppItem::new(format!("/{n}.app"), n) }
     fn service(fs: MockFs) -> LauncherService<MockFs> {
         LauncherService::open(StateStore::new(fs, PathBuf::from(STATE_PATH)))
     }
@@ -94,6 +98,23 @@ mod tests {
 
         assert_eq!(svc.state().pages[1][0], Some(item("A")));
         assert_eq!(svc.store.load().unwrap().pages[1][0], Some(item("A")));
+    }
+
+    #[test]
+    fn add_app_to_slot_persists_and_refuses_an_occupied_slot() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 3, item("A")).unwrap();
+        assert_eq!(svc.store.load().unwrap().pages[0][3], Some(item("A")));
+
+        assert_eq!(svc.add_app_to_slot(0, 3, item("B")), Err("Slot is occupied".to_string()));
+        assert_eq!(svc.state().pages[0][3], Some(item("A")));
+    }
+
+    #[test]
+    fn add_app_to_slot_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::failing("write"));
+        assert!(svc.add_app_to_slot(0, 0, item("A")).is_err());
+        assert_eq!(svc.state().pages[0][0], None);
     }
 
     #[test]

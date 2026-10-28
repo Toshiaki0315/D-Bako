@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -29,6 +29,28 @@ describe("AppIcon", () => {
     expect(invokeMock).toHaveBeenCalledWith("get_app_icon", {
       path: "/Applications/Foo.app",
     });
+  });
+
+  it("uses the stored favicon for a URL shortcut without asking the backend", () => {
+    render(<AppIcon path="https://example.com/" name="example.com" kind="url" icon={URL_A} />);
+    expect(screen.getByRole("img", { name: "example.com" })).toHaveAttribute("src", URL_A);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a colored initial for a URL shortcut that has no favicon", () => {
+    render(<AppIcon path="https://example.com/" name="example.com" kind="url" />);
+    const tile = screen.getByText("E");
+    expect(tile).toHaveClass("app-icon", "app-icon-letter");
+    expect(tile.style.background).toMatch(/^(hsl|rgb)/); // jsdom は hsl を rgb に変換する
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the initial when a stored favicon fails to load", () => {
+    render(<AppIcon path="https://example.com/" name="example.com" kind="url" icon="data:image/png;base64,broken" />);
+    fireEvent.error(screen.getByRole("img", { name: "example.com" }));
+    expect(screen.getByText("E")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
   it("keeps the fallback when extraction fails", async () => {

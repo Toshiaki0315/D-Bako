@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 import App from "./App";
 
-type AppItem = { path: string; name: string };
+type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
 
 function makeState(maxPages = 3, filled: Record<string, AppItem> = {}) {
   const pages = Array.from({ length: maxPages }, (_, p) =>
@@ -219,5 +219,181 @@ describe("App", () => {
     await screen.findByText("1 / 3");
     unmount();
     await waitFor(() => expect(unlistenMock).toHaveBeenCalled());
+  });
+});
+
+const urlItem: AppItem = {
+  path: "https://example.com/",
+  name: "example.com",
+  kind: "url",
+  icon: "data:image/png;base64,AAAA",
+};
+
+function paste(text: string, target: Element = document.body) {
+  fireEvent.paste(target, { clipboardData: { getData: () => text } });
+}
+
+describe("App URL shortcuts", () => {
+  it("shows a URL shortcut with its stored favicon without extracting an icon", async () => {
+    await renderApp(makeState(3, { "0:0": urlItem }));
+    expect(screen.getByRole("img", { name: "example.com" })).toHaveAttribute("src", urlItem.icon);
+    expect(invokeMock).not.toHaveBeenCalledWith("get_app_icon", expect.anything());
+  });
+
+  it("launches a URL shortcut with its URL", async () => {
+    await renderApp(makeState(3, { "0:0": urlItem }));
+    await userEvent.click(screen.getByRole("button", { name: "example.com" }));
+    expect(invokeMock).toHaveBeenCalledWith("launch_app", { path: "https://example.com/" });
+  });
+
+  it("registers a pasted URL on the current page and refreshes state", async () => {
+    await renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    invokeMock.mockClear();
+
+    paste("  example.com\n");
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("add_url_to_first_empty", { pageIdx: 1, input: "example.com" }),
+    );
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("get_state"));
+  });
+
+  it("ignores pasted text that does not look like a URL", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+    paste("just some words");
+    paste("");
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the reason when a pasted URL cannot be registered", async () => {
+    await renderApp();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "add_url_to_first_empty") throw "No empty slot on this page";
+      return makeState();
+    });
+    paste("example.com");
+    expect(await screen.findByRole("alert")).toHaveTextContent("No empty slot on this page");
+  });
+
+  it("registers a dropped .webloc / .url file", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+    await drop(["/tmp/readme.txt", "/Users/me/Site.webloc"]);
+    expect(invokeMock).toHaveBeenCalledWith("add_url_file_to_first_empty", {
+      pageIdx: 0,
+      path: "/Users/me/Site.webloc",
+    });
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("get_state"));
+  });
+
+  it("prefers a dropped .app over a shortcut file", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+    await drop(["/Users/me/Site.webloc", "/Applications/Bar.app"]);
+    expect(invokeMock).toHaveBeenCalledWith("add_app_to_first_empty", { pageIdx: 0, path: "/Applications/Bar.app" });
+    expect(invokeMock).not.toHaveBeenCalledWith("add_url_file_to_first_empty", expect.anything());
+  });
+
+  it("shows the reason when a dropped shortcut file is invalid", async () => {
+    await renderApp();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "add_url_file_to_first_empty") throw "URL not found in webloc";
+      return makeState();
+    });
+    await drop(["/Users/me/Broken.webloc"]);
+    expect(await screen.findByRole("alert")).toHaveTextContent("URL not found in webloc");
+  });
+});
+
+describe("App URL dialog", () => {
+  const emptySlot = (i: number) => document.querySelectorAll(".slot")[i] as HTMLElement;
+
+  it("opens from an empty slot and registers the URL into that slot", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+    await userEvent.click(emptySlot(3));
+
+    const input = screen.getByRole("textbox", { name: "URL" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await userEvent.type(input, "example.com{Enter}");
+
+    expect(invokeMock).toHaveBeenCalledWith("add_url_to_slot", { pageIdx: 0, slotIdx: 3, input: "example.com" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(invokeMock).toHaveBeenCalledWith("get_state");
+  });
+
+  it("does not open for a filled slot", async () => {
+    await renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "Foo" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes with Escape or a click on the backdrop without registering", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+
+    await userEvent.click(emptySlot(1));
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(emptySlot(1));
+    await userEvent.click(document.querySelector(".backdrop")!);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("add_url_to_slot", expect.anything());
+  });
+
+  it("does not close when the dialog itself is clicked", async () => {
+    await renderApp();
+    await userEvent.click(emptySlot(1));
+    await userEvent.click(screen.getByRole("dialog"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("ignores an empty submission", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+    await userEvent.click(emptySlot(1));
+    await userEvent.type(screen.getByRole("textbox", { name: "URL" }), "   {Enter}");
+    expect(invokeMock).not.toHaveBeenCalledWith("add_url_to_slot", expect.anything());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("stays open and shows the reason when registering fails", async () => {
+    await renderApp();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "add_url_to_slot") throw "Invalid host";
+      return makeState();
+    });
+    await userEvent.click(emptySlot(2));
+    await userEvent.type(screen.getByRole("textbox", { name: "URL" }), "hello{Enter}");
+
+    expect(await screen.findByText(/Invalid host/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "URL" })).toBeEnabled();
+  });
+
+  it("disables the input while the favicon is being fetched", async () => {
+    await renderApp();
+    let finish!: () => void;
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "add_url_to_slot") return new Promise<void>((r) => (finish = r));
+      return makeState();
+    });
+    await userEvent.click(emptySlot(2));
+    await userEvent.type(screen.getByRole("textbox", { name: "URL" }), "example.com{Enter}");
+    expect(screen.getByRole("textbox", { name: "URL" })).toBeDisabled();
+
+    await act(async () => finish());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("does not treat a paste inside the dialog as a quick registration", async () => {
+    await renderApp();
+    invokeMock.mockClear();
+    await userEvent.click(emptySlot(1));
+    paste("example.com", screen.getByRole("textbox", { name: "URL" }));
+    expect(invokeMock).not.toHaveBeenCalledWith("add_url_to_first_empty", expect.anything());
   });
 });

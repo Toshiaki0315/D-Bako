@@ -123,7 +123,7 @@ mod tests {
     fn save_then_load_restores_state() {
         let s = store(MockFs::default());
         let mut state = LauncherState::new(3);
-        state.add_app(1, 2, AppItem { path: "/A.app".into(), name: "A".into() }).unwrap();
+        state.add_app(1, 2, AppItem::new("/A.app", "A")).unwrap();
         s.save(&state).unwrap();
         let restored = s.load().unwrap();
         assert_eq!(restored.max_pages, 3);
@@ -171,7 +171,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = StateStore::new(StdFs, dir.path().join("a/b/state.json"));
         let mut state = LauncherState::new(2);
-        state.add_app(0, 0, AppItem { path: "/A.app".into(), name: "A".into() }).unwrap();
+        state.add_app(0, 0, AppItem::new("/A.app", "A")).unwrap();
         s.save(&state).unwrap();
         assert_eq!(s.load().unwrap().pages, state.pages);
         assert!(!dir.path().join("a/b/state.json.tmp").exists());

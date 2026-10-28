@@ -1,6 +1,26 @@
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AppItem { pub path: String, pub name: String }
+pub struct AppItem {
+    /// `.app` のパス。`kind` が `Url` のときは URL。
+    pub path: String,
+    pub name: String,
+    #[serde(default)]
+    pub kind: ItemKind,
+    /// URL ショートカットの favicon (data URL)。取得できなければ None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ItemKind { #[default] App, Url }
+impl AppItem {
+    pub fn new(path: impl Into<String>, name: impl Into<String>) -> Self {
+        Self { path: path.into(), name: name.into(), kind: ItemKind::App, icon: None }
+    }
+    pub fn url(url: impl Into<String>, name: impl Into<String>, icon: Option<String>) -> Self {
+        Self { path: url.into(), name: name.into(), kind: ItemKind::Url, icon }
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherState { pub pages: Vec<Vec<Option<AppItem>>>, pub max_pages: usize }
 impl LauncherState {
@@ -32,6 +52,13 @@ impl LauncherState {
         self.pages[page_idx][slot_idx] = Some(app);
         Ok(())
     }
+    /// 指定スロットが空の場合だけ登録する。埋まっていればエラー (上書きしない)。
+    pub fn add_app_to_empty_slot(&mut self, page_idx: usize, slot_idx: usize, app: AppItem) -> Result<(), String> {
+        self.check_pos(page_idx, slot_idx)?;
+        if self.pages[page_idx][slot_idx].is_some() { return Err("Slot is occupied".to_string()); }
+        self.pages[page_idx][slot_idx] = Some(app);
+        Ok(())
+    }
     /// 指定スロットのアプリを削除して返す。空スロットはエラー。
     pub fn remove_app(&mut self, page_idx: usize, slot_idx: usize) -> Result<AppItem, String> {
         self.check_pos(page_idx, slot_idx)?;
@@ -60,8 +87,8 @@ mod tests {
     use super::*;
     #[test] fn test_initial_state() { let state = LauncherState::new(3); assert_eq!(state.max_pages, 3); assert!(state.pages[0].iter().all(|slot| slot.is_none())); }
     #[test] fn test_max_pages_limit() { let state = LauncherState::new(15); assert_eq!(state.max_pages, 10); }
-    #[test] fn test_add_app() { let mut state = LauncherState::new(1); let app = AppItem { path: "/A.app".into(), name: "A".into() }; assert!(state.add_app(0, 0, app.clone()).is_ok()); assert_eq!(state.pages[0][0], Some(app)); }
-    fn item(n: &str) -> AppItem { AppItem { path: format!("/{n}.app"), name: n.into() } }
+    #[test] fn test_add_app() { let mut state = LauncherState::new(1); let app = AppItem::new("/A.app", "A"); assert!(state.add_app(0, 0, app.clone()).is_ok()); assert_eq!(state.pages[0][0], Some(app)); }
+    fn item(n: &str) -> AppItem { AppItem::new(format!("/{n}.app"), n) }
     #[test] fn test_new_clamps_zero_pages_to_one() { assert_eq!(LauncherState::new(0).max_pages, 1); }
     #[test] fn test_add_app_rejects_invalid_page() { let mut s = LauncherState::new(1); assert_eq!(s.add_app(1, 0, item("A")), Err("Invalid page index".to_string())); }
     #[test] fn test_add_app_rejects_invalid_slot() { let mut s = LauncherState::new(1); assert_eq!(s.add_app(0, 8, item("A")), Err("Invalid slot index".to_string())); }
@@ -93,6 +120,43 @@ mod tests {
     #[test] fn test_from_json_rejects_wrong_slot_count() {
         let json = r#"{"pages":[[null,null]],"max_pages":1}"#;
         assert_eq!(LauncherState::from_json(json).unwrap_err(), "Each page must have 8 slots");
+    }
+    #[test] fn test_add_to_empty_slot_places_the_item() {
+        let mut s = LauncherState::new(2);
+        assert!(s.add_app_to_empty_slot(1, 4, item("A")).is_ok());
+        assert_eq!(s.pages[1][4], Some(item("A")));
+    }
+    #[test] fn test_add_to_empty_slot_rejects_an_occupied_slot_without_overwriting() {
+        let mut s = LauncherState::new(1);
+        s.add_app(0, 0, item("A")).unwrap();
+        assert_eq!(s.add_app_to_empty_slot(0, 0, item("B")), Err("Slot is occupied".to_string()));
+        assert_eq!(s.pages[0][0], Some(item("A")));
+    }
+    #[test] fn test_add_to_empty_slot_rejects_invalid_positions() {
+        let mut s = LauncherState::new(1);
+        assert_eq!(s.add_app_to_empty_slot(1, 0, item("A")), Err("Invalid page index".to_string()));
+        assert_eq!(s.add_app_to_empty_slot(0, 8, item("A")), Err("Invalid slot index".to_string()));
+    }
+    #[test] fn test_app_item_new_defaults_to_app_kind() {
+        let i = AppItem::new("/A.app", "A");
+        assert_eq!(i.kind, ItemKind::App);
+        assert_eq!(i.icon, None);
+    }
+    #[test] fn test_url_item_keeps_kind_and_icon_through_json() {
+        let mut s = LauncherState::new(1);
+        let it = AppItem::url("https://example.com/", "example.com", Some("data:image/png;base64,AA".into()));
+        assert_eq!(it.kind, ItemKind::Url);
+        s.add_app(0, 0, it.clone()).unwrap();
+        let restored = LauncherState::from_json(&s.to_json().unwrap()).unwrap();
+        assert_eq!(restored.pages[0][0], Some(it));
+    }
+    #[test] fn test_legacy_json_without_kind_loads_as_app() {
+        let json = r#"{"pages":[[{"path":"/A.app","name":"A"},null,null,null,null,null,null,null]],"max_pages":1}"#;
+        let s = LauncherState::from_json(json).unwrap();
+        assert_eq!(s.pages[0][0], Some(AppItem::new("/A.app", "A")));
+    }
+    #[test] fn test_app_item_without_icon_omits_icon_key() {
+        assert!(!serde_json::to_string(&AppItem::new("/A.app", "A")).unwrap().contains("icon"));
     }
     #[test] fn test_remove_app_returns_item_and_empties_slot() {
         let mut s = LauncherState::new(1);

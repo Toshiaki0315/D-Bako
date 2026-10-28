@@ -33,3 +33,10 @@ AIエージェント（Claude）は、このタスクリストを上から順に
 - [x] 3. フロントエンドからのアプリ起動コマンド呼び出し (完了)
 - [x] 4. 状態の永続化（起動時のロード処理）(完了: `LauncherService` で変更ごとに保存、起動時に復元。壊れたファイルは `.bak` に退避。保存先は `app_data_dir/state.json`。GUI での再起動確認は未実施)
 - [x] 5. E2E動作確認とコードの最終リファクタリング (完了: 実機で起動・状態復元・アイコン表示・クリック起動を確認。`.app` 以外のドロップ拒否とエラー表示を追加。Finder からの実ドロップは未確認)
+
+## Phase 6: URL ショートカット
+- [x] 1. [Test->Impl] アイテムモデルの拡張（`kind` / `icon`、旧保存ファイルとの互換、空きスロット指定の登録）
+- [x] 2. [Test->Impl] URL の正規化・表示名・`.webloc` / `.url` の解析（`link.rs`、http(s) のみ・認証情報つきは拒否）
+- [x] 3. [Test->Impl] favicon 取得（`favicon.rs`、HTTP をトレイト化してモックテスト。実通信は `net.rs` で `cargo test -- --ignored live`）
+- [x] 4. [Test->Impl] Tauri コマンド（`add_url_to_first_empty` / `add_url_to_slot` / `add_url_file_to_first_empty`）と起動対象の検証
+- [x] 5. [Test->Impl] フロントエンド（貼り付け Cmd+V、空きスロットのクリックで入力、`.webloc` / `.url` のドロップ、favicon・頭文字アイコン）(完了。実機でのキー入力による登録は未確認)
