@@ -70,6 +70,18 @@ describe("App", () => {
     expect(document.querySelectorAll(".slot.filled")).toHaveLength(1);
   });
 
+  it("shows the extracted icon image in a filled slot", async () => {
+    const state = makeState(3, { "0:0": foo });
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_state") return state;
+      if (cmd === "get_app_icon") return "data:image/png;base64,AAAA";
+      return undefined;
+    });
+    render(<App />);
+    const img = await screen.findByRole("img", { name: "Foo" });
+    expect(img).toHaveAttribute("src", "data:image/png;base64,AAAA");
+  });
+
   it("launches the app when a filled slot is clicked", async () => {
     await renderApp();
     await userEvent.click(screen.getByText("Foo"));

@@ -20,6 +20,12 @@ pub fn find_icon_path(app_path: &Path) -> Result<PathBuf, String> {
     if icon_path.is_file() { Ok(icon_path) } else { Err(format!("Icon file not found: {}", icon_path.display())) }
 }
 
+/// PNG バイト列を `<img src>` にそのまま使える data URL にする。
+pub fn to_data_url(png: &[u8]) -> String {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    format!("data:image/png;base64,{}", STANDARD.encode(png))
+}
+
 /// アプリのアイコンを、最大サイズの PNG バイト列として返す。
 pub fn extract_icon_png(app_path: &Path) -> Result<Vec<u8>, String> {
     let icon_path = find_icon_path(app_path)?;
@@ -75,6 +81,12 @@ mod tests {
         if let Some(p) = plist { fs::write(app.join("Contents/Info.plist"), p).unwrap(); }
         if let Some((name, bytes)) = icns { fs::write(app.join("Contents/Resources").join(name), bytes).unwrap(); }
         app
+    }
+
+    #[test]
+    fn encodes_png_bytes_as_data_url() {
+        assert_eq!(to_data_url(&[1, 2, 3]), "data:image/png;base64,AQID");
+        assert_eq!(to_data_url(&[]), "data:image/png;base64,");
     }
 
     #[test]

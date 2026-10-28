@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { clampPage, pickAppPath } from "./lib/launcher";
+import { AppIcon } from "./components/AppIcon";
 
 type AppItem = { path: string; name: string };
 type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
@@ -47,7 +48,7 @@ export default function App() {
       <div className="grid">
         {currentSlots.map((app, i) => (
           <div key={i} className={`slot ${app ? 'filled' : ''}`} onClick={() => handleLaunch(app)}>
-            {app ? (<><div style={{fontSize: '32px'}}>📱</div><div className="app-name">{app.name}</div></>) : (<div style={{color: '#555'}}>{i + 1}</div>)}
+            {app ? (<><AppIcon path={app.path} name={app.name} /><div className="app-name">{app.name}</div></>) : (<div style={{color: '#555'}}>{i + 1}</div>)}
           </div>
         ))}
       </div>
