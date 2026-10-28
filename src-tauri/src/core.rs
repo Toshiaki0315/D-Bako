@@ -10,6 +10,18 @@ impl LauncherState {
         for _ in 0..max_pages { pages.push(vec![None; 8]); }
         Self { pages, max_pages }
     }
+    /// 永続化用に JSON 文字列へ変換する。
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string(self).map_err(|e| e.to_string())
+    }
+    /// JSON から復元する。ファイルは外部入力なので不変条件（ページ数・スロット数）を検証する。
+    pub fn from_json(json: &str) -> Result<Self, String> {
+        let state: Self = serde_json::from_str(json).map_err(|e| e.to_string())?;
+        if !(1..=10).contains(&state.max_pages) { return Err("Invalid max_pages".to_string()); }
+        if state.pages.len() != state.max_pages { return Err("Page count does not match max_pages".to_string()); }
+        if state.pages.iter().any(|p| p.len() != 8) { return Err("Each page must have 8 slots".to_string()); }
+        Ok(state)
+    }
     fn check_pos(&self, page_idx: usize, slot_idx: usize) -> Result<(), String> {
         if page_idx >= self.max_pages { return Err("Invalid page index".to_string()); }
         if slot_idx >= 8 { return Err("Invalid slot index".to_string()); }
@@ -61,6 +73,27 @@ mod tests {
         assert_eq!(s.pages[0][1], Some(item("B")));
     }
     #[test] fn test_add_to_first_empty_rejects_invalid_page() { let mut s = LauncherState::new(1); assert_eq!(s.add_app_to_first_empty(5, item("A")), Err("Invalid page index".to_string())); }
+    #[test] fn test_json_roundtrip_preserves_state() {
+        let mut s = LauncherState::new(3);
+        s.add_app(2, 7, item("A")).unwrap();
+        let restored = LauncherState::from_json(&s.to_json().unwrap()).unwrap();
+        assert_eq!(restored.max_pages, 3);
+        assert_eq!(restored.pages, s.pages);
+    }
+    #[test] fn test_from_json_rejects_malformed_json() { assert!(LauncherState::from_json("not json").is_err()); }
+    #[test] fn test_from_json_rejects_out_of_range_max_pages() {
+        assert_eq!(LauncherState::from_json(r#"{"pages":[],"max_pages":0}"#).unwrap_err(), "Invalid max_pages");
+        let eleven = format!(r#"{{"pages":[{}],"max_pages":11}}"#, vec![r#"[null,null,null,null,null,null,null,null]"#; 11].join(","));
+        assert_eq!(LauncherState::from_json(&eleven).unwrap_err(), "Invalid max_pages");
+    }
+    #[test] fn test_from_json_rejects_page_count_mismatch() {
+        let json = r#"{"pages":[[null,null,null,null,null,null,null,null]],"max_pages":2}"#;
+        assert_eq!(LauncherState::from_json(json).unwrap_err(), "Page count does not match max_pages");
+    }
+    #[test] fn test_from_json_rejects_wrong_slot_count() {
+        let json = r#"{"pages":[[null,null]],"max_pages":1}"#;
+        assert_eq!(LauncherState::from_json(json).unwrap_err(), "Each page must have 8 slots");
+    }
     #[test] fn test_remove_app_returns_item_and_empties_slot() {
         let mut s = LauncherState::new(1);
         s.add_app(0, 3, item("A")).unwrap();
