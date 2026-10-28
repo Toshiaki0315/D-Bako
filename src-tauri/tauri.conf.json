@@ -25,9 +25,10 @@
       {
         "title": "\u9053\u5177\u7bb1",
         "width": 640,
-        "height": 480,
+        "height": 410,
         "resizable": false,
-        "transparent": true
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

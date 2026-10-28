@@ -24,6 +24,7 @@ describe("AppIcon", () => {
 
     const img = await screen.findByRole("img", { name: "Foo" });
     expect(img).toHaveAttribute("src", URL_A);
+    expect(img).toHaveClass("app-icon");
     expect(screen.queryByText("📱")).not.toBeInTheDocument();
     expect(invokeMock).toHaveBeenCalledWith("get_app_icon", {
       path: "/Applications/Foo.app",

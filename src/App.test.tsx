@@ -40,7 +40,7 @@ function mockBackend(state: ReturnType<typeof makeState>) {
 async function renderApp(state = makeState(3, { "0:0": foo })) {
   mockBackend(state);
   render(<App />);
-  await screen.findByText(/Page 1 \//);
+  await screen.findByText(/^1 \/ \d+$/);
 }
 
 async function drop(paths?: string[]) {
@@ -60,7 +60,7 @@ describe("App", () => {
     mockBackend(makeState());
     render(<App />);
     expect(screen.getByText("Loading...")).toBeInTheDocument();
-    await screen.findByText("Page 1 / 3");
+    await screen.findByText("1 / 3");
   });
 
   it("renders 8 slots and the registered app name", async () => {
@@ -68,6 +68,37 @@ describe("App", () => {
     expect(screen.getByText("Foo")).toBeInTheDocument();
     expect(document.querySelectorAll(".slot")).toHaveLength(8);
     expect(document.querySelectorAll(".slot.filled")).toHaveLength(1);
+  });
+
+  it("shows the app name as a tooltip on the filled slot only", async () => {
+    await renderApp();
+    const tooltips = screen.getAllByRole("tooltip");
+    expect(tooltips).toHaveLength(1);
+    expect(tooltips[0]).toHaveTextContent("Foo");
+    expect(document.querySelector(".slot.filled")).toContainElement(tooltips[0]);
+  });
+
+  it("has no instruction text", async () => {
+    await renderApp();
+    expect(screen.queryByText(/ドラッグ/)).not.toBeInTheDocument();
+  });
+
+  it("provides a drag region so the window can be moved by its top edge", async () => {
+    await renderApp();
+    expect(document.querySelector("[data-tauri-drag-region]")).not.toBeNull();
+  });
+
+  it("puts icon-only pagination below the grid", async () => {
+    await renderApp();
+    const prev = screen.getByRole("button", { name: "Previous page" });
+    const next = screen.getByRole("button", { name: "Next page" });
+    expect(prev.textContent).toBe("");
+    expect(next.textContent).toBe("");
+
+    const grid = document.querySelector(".grid")!;
+    for (const el of [prev, next, screen.getByText("1 / 3")]) {
+      expect(grid.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it("shows the extracted icon image in a filled slot", async () => {
@@ -96,23 +127,23 @@ describe("App", () => {
 
   it("navigates between pages and disables buttons at the bounds", async () => {
     await renderApp();
-    const prev = screen.getByRole("button", { name: /Prev/ });
-    const next = screen.getByRole("button", { name: /Next/ });
+    const prev = screen.getByRole("button", { name: "Previous page" });
+    const next = screen.getByRole("button", { name: "Next page" });
     expect(prev).toBeDisabled();
 
     await userEvent.click(next);
-    expect(screen.getByText("Page 2 / 3")).toBeInTheDocument();
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
     await userEvent.click(next);
-    expect(screen.getByText("Page 3 / 3")).toBeInTheDocument();
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
     expect(next).toBeDisabled();
 
     await userEvent.click(prev);
-    expect(screen.getByText("Page 2 / 3")).toBeInTheDocument();
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
   });
 
   it("registers a dropped .app on the current page and refreshes state", async () => {
     await renderApp();
-    await userEvent.click(screen.getByRole("button", { name: /Next/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
     invokeMock.mockClear();
 
     await drop(["/tmp/readme.txt", "/Applications/Bar.app"]);
@@ -161,7 +192,7 @@ describe("App", () => {
   it("unsubscribes from the drop event on unmount", async () => {
     mockBackend(makeState());
     const { unmount } = render(<App />);
-    await screen.findByText("Page 1 / 3");
+    await screen.findByText("1 / 3");
     unmount();
     await waitFor(() => expect(unlistenMock).toHaveBeenCalled());
   });

@@ -1,11 +1,26 @@
-body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #1e1e1e; color: #fff; user-select: none; }
-.container { display: flex; flex-direction: column; align-items: center; padding: 20px; }
-.header { display: flex; justify-content: space-between; width: 100%; max-width: 600px; margin-bottom: 20px; }
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); gap: 15px; width: 100%; max-width: 600px; height: 300px; }
-.slot { background-color: #2a2a2a; border: 2px dashed #444; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+html, body, #root { height: 100%; }
+body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #1e1e1e; color: #fff; user-select: none; overflow: hidden; }
+.container { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 0 12px 14px; }
+/* オーバーレイ式タイトルバーの領域。信号ボタンの裏を含め、ここを掴んでウィンドウを動かす */
+.drag-region { flex: none; height: 40px; margin: 0 -12px; }
+.grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: min-content; align-content: center; gap: 6px; }
+/* スロットは正方形でセル幅いっぱい。登録済みアイコンと空きスロットの大きさが一致する */
+.slot { position: relative; box-sizing: border-box; aspect-ratio: 1; align-self: center; background-color: #2a2a2a; border: 2px dashed #444; border-radius: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; }
 .slot:hover { background-color: #333; border-color: #666; }
-.slot.filled { border-style: solid; border-color: #555; }
-.app-name { font-size: 12px; text-align: center; margin-top: 8px; word-break: break-all; padding: 0 4px; }
-button { background: #3a3a3a; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+.slot:not(.filled) { border-radius: 18%; }
+/* 登録済みスロットは枠も背景も持たず、アイコンだけを見せる */
+.slot.filled, .slot.filled:hover { background: transparent; border-color: transparent; }
+/* アイコン画像は周囲に約10%ずつ透明な余白を含む。その分をスロットの外へはみ出させ、絵そのものをスロットいっぱいにする */
+.slot.filled .app-icon { position: absolute; left: -12.5%; top: -12.5%; width: 125%; height: 125%; max-height: none; transition: transform 0.15s; }
+.slot.filled:hover .app-icon { transform: scale(1.06); }
+.slot-number { color: #555; }
+.app-icon { width: 100%; height: auto; max-height: 100%; aspect-ratio: 1; object-fit: contain; }
+.app-icon-fallback { display: flex; align-items: center; justify-content: center; font-size: 56px; }
+/* アプリ名: ホバー時に出る吹き出し */
+.tooltip { position: absolute; left: 50%; bottom: calc(100% + 4px); transform: translate(-50%, 4px); max-width: 180px; padding: 5px 10px; border-radius: 6px; background: #f2f2f2; color: #1e1e1e; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 10; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
+.slot:hover .tooltip { opacity: 1; transform: translate(-50%, 0); }
+.error { margin: 10px 0 0; color: #ff8a80; font-size: 12px; text-align: center; }
+.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 12px; font-size: 13px; color: #aaa; }
+button { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
 button:hover { background: #4a4a4a; }
-button:disabled { background: #222; color: #555; cursor: not-allowed; }
+button:disabled { background: #252525; color: #555; cursor: not-allowed; }

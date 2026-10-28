@@ -7,6 +7,14 @@ import { AppIcon } from "./components/AppIcon";
 type AppItem = { path: string; name: string };
 type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
 
+function Chevron({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "left" ? "M10 3 5 8l5 5" : "M6 3l5 5-5 5"} />
+    </svg>
+  );
+}
+
 export default function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
@@ -46,20 +54,20 @@ export default function App() {
 
   return (
     <div className="container">
-      <div className="header">
-        <button onClick={() => setCurrentPage(p => clampPage(p - 1, state.max_pages))} disabled={currentPage === 0}>◀ Prev</button>
-        <span>Page {currentPage + 1} / {state.max_pages}</span>
-        <button onClick={() => setCurrentPage(p => clampPage(p + 1, state.max_pages))} disabled={currentPage >= state.max_pages - 1}>Next ▶</button>
-      </div>
+      <div className="drag-region" data-tauri-drag-region />
       <div className="grid">
         {currentSlots.map((app, i) => (
           <div key={i} className={`slot ${app ? 'filled' : ''}`} onClick={() => handleLaunch(app)}>
-            {app ? (<><AppIcon path={app.path} name={app.name} /><div className="app-name">{app.name}</div></>) : (<div style={{color: '#555'}}>{i + 1}</div>)}
+            {app ? (<><AppIcon path={app.path} name={app.name} /><div role="tooltip" className="tooltip">{app.name}</div></>) : (<div className="slot-number">{i + 1}</div>)}
           </div>
         ))}
       </div>
-      {error && <p role="alert" style={{marginTop: '12px', color: '#ff8a80', fontSize: '12px'}}>登録できません: {error}</p>}
-      <p style={{marginTop: '20px', color: '#888', fontSize: '12px'}}>※ .app ファイルをウィンドウにドラッグ＆ドロップして登録します。</p>
+      {error && <p role="alert" className="error">登録できません: {error}</p>}
+      <div className="pager">
+        <button aria-label="Previous page" onClick={() => setCurrentPage(p => clampPage(p - 1, state.max_pages))} disabled={currentPage === 0}><Chevron direction="left" /></button>
+        <span>{currentPage + 1} / {state.max_pages}</span>
+        <button aria-label="Next page" onClick={() => setCurrentPage(p => clampPage(p + 1, state.max_pages))} disabled={currentPage >= state.max_pages - 1}><Chevron direction="right" /></button>
+      </div>
     </div>
   );
 }

@@ -33,6 +33,6 @@ export function AppIcon({ path, name }: Props) {
     };
   }, [path]);
 
-  if (!src) return <div style={{ fontSize: "32px" }}>📱</div>;
-  return <img src={src} alt={name} width={48} height={48} />;
+  if (!src) return <div className="app-icon app-icon-fallback">📱</div>;
+  return <img className="app-icon" src={src} alt={name} draggable={false} />;
 }
