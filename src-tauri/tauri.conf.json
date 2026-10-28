@@ -1,0 +1,25 @@
+{
+  "productName": "D-Bako",
+  "version": "0.1.0",
+  "identifier": "com.github.toshiaki0315.dbako",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "\u9053\u5177\u7bb1",
+        "width": 640,
+        "height": 480,
+        "resizable": false,
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}

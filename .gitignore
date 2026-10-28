@@ -1,0 +1,22 @@
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+
+# Rust
+target/
+Cargo.lock
+
+# macOS
+.DS_Store
+
+# Environment
+.env
+.env.local
+
+# Coverage
+coverage/
+lcov.info
+
+# Tauri generated
+src-tauri/gen/

@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend (Vitest + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # 90% 未満なら vite.config.ts の thresholds で失敗する
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: coverage/lcov.info
+
+  rust:
+    name: Rust (cargo test + coverage)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
+      # Tauri 依存の薄い層 (main.rs / lib.rs) は計測対象外。core 等の純粋ロジックで 90% を要求
+      - name: Coverage (>= 90% lines)
+        working-directory: src-tauri
+        run: >
+          cargo llvm-cov --lib
+          --ignore-filename-regex 'main\.rs|lib\.rs'
+          --fail-under-lines 90
+          --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: src-tauri/lcov.info
