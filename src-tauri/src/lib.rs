@@ -1,5 +1,6 @@
 pub mod core;
 pub mod icon;
+pub mod storage;
 use std::sync::Mutex;
 use tauri::State;
 use tauri_plugin_shell::ShellExt;

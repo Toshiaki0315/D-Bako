@@ -19,7 +19,7 @@ AIエージェント（Claude）は、このタスクリストを上から順に
 ## Phase 3: macOS インフラストラクチャ層 (Rust)
 - [x] 1. [Test->Impl] macOS `.app` バンドルからアプリアイコンを抽出する処理（NSWorkspace等の利用）(完了: `icon.rs`、`.icns` を直接読んで PNG 化。`Assets.car` のみのアプリは未対応で、NSWorkspace によるフォールバックは今後の課題)
 - [x] 2. [Test->Impl] 特定のパスにあるアプリケーションを起動する処理（`open`コマンド）(ベース完了)
-- [ ] 3. [Test->Impl] ファイルシステム操作のモックテスト
+- [x] 3. [Test->Impl] ファイルシステム操作のモックテスト (完了: `storage.rs`、`FileSystem` トレイト + インメモリモック、一時ファイル→rename の保存)
 
 ## Phase 4: フロントエンド実装 (TypeScript)
 - [x] 1. [Test->Impl] 縦2列×横4列のグリッドUIコンポーネントの作成 (ベース完了)
