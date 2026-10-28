@@ -17,7 +17,7 @@ AIエージェント（Claude）は、このタスクリストを上から順に
 - [x] 5. [Test->Impl] 状態のシリアライズ・デシリアライズ（JSONベースの永続化モデル）(完了: `to_json` / `from_json`、読込時に不変条件を検証)
 
 ## Phase 3: macOS インフラストラクチャ層 (Rust)
-- [ ] 1. [Test->Impl] macOS `.app` バンドルからアプリアイコンを抽出する処理（NSWorkspace等の利用）
+- [x] 1. [Test->Impl] macOS `.app` バンドルからアプリアイコンを抽出する処理（NSWorkspace等の利用）(完了: `icon.rs`、`.icns` を直接読んで PNG 化。`Assets.car` のみのアプリは未対応で、NSWorkspace によるフォールバックは今後の課題)
 - [x] 2. [Test->Impl] 特定のパスにあるアプリケーションを起動する処理（`open`コマンド）(ベース完了)
 - [ ] 3. [Test->Impl] ファイルシステム操作のモックテスト
 
