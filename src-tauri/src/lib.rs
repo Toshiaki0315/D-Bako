@@ -94,6 +94,20 @@ async fn get_app_icon(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// 覚えておいた設定 (ウィンドウ幅など) を保存する。終了処理の途中なので、失敗しても止めない。
+fn flush_settings<R: tauri::Runtime>(app: &impl Manager<R>) {
+    if let Some(state) = app.try_state::<AppState>() {
+        if let Err(e) = state.settings.lock().unwrap().flush() { eprintln!("failed to save settings: {e}"); }
+    }
+}
+
+/// 前回のウィンドウ幅で開く。画面より大きくならないよう、今いる画面の幅に収める。
+fn restore_window_size(window: &tauri::WebviewWindow, saved_width: Option<f64>) -> tauri::Result<()> {
+    let screen_width = window.current_monitor()?.map(|m| m.size().to_logical::<f64>(m.scale_factor()).width);
+    let (width, height) = window::restore_size(saved_width, screen_width);
+    window.set_size(tauri::LogicalSize::new(width, height))
+}
+
 /// リサイズ中も縦横比を保つ (tao には API が無いので NSWindow に直接設定する)。
 #[cfg(target_os = "macos")]
 fn lock_aspect_ratio(window: &tauri::WebviewWindow) -> tauri::Result<()> {
@@ -112,6 +126,17 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
+        .on_window_event(|window, event| match event {
+            // 最小化などで 0 になる場合は覚えない
+            tauri::WindowEvent::Resized(size) if size.width > 0 => {
+                let scale = window.scale_factor().unwrap_or(1.0);
+                if let Some(state) = window.try_state::<AppState>() {
+                    state.settings.lock().unwrap().remember_window_width(size.to_logical::<f64>(scale).width);
+                }
+            }
+            tauri::WindowEvent::CloseRequested { .. } => flush_settings(window),
+            _ => {}
+        })
         .setup(|app| {
             let window = app.get_webview_window("main").ok_or("main window not found")?;
             let (min_w, min_h) = window::min_size();
@@ -124,6 +149,7 @@ pub fn run() {
             let launcher = LauncherService::open(StateStore::new(StdFs, data_dir.join("state.json")));
             let settings = SettingsService::open(StdFs, data_dir.join("settings.json"));
             window.set_always_on_top(settings.settings().always_on_top)?;
+            restore_window_size(&window, settings.settings().window_width)?;
             app.manage(AppState { launcher: Mutex::new(launcher), settings: Mutex::new(settings) });
             Ok(())
         })
@@ -138,6 +164,8 @@ pub fn run() {
             get_settings,
             set_always_on_top
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // ⌘Q での終了はウィンドウの CloseRequested を経ないので、ここでも保存する
+        .run(|app, event| if let tauri::RunEvent::Exit = event { flush_settings(app) });
 }
