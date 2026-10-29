@@ -501,3 +501,34 @@ describe("App rename", () => {
     expect(invokeMock).not.toHaveBeenCalledWith("rename_app", expect.anything());
   });
 });
+
+describe("App remove", () => {
+  const filled = () => screen.getByRole("button", { name: "Foo" });
+
+  async function removeFromMenu() {
+    fireEvent.contextMenu(filled(), { clientX: 40, clientY: 60 });
+    await userEvent.click(screen.getByRole("menuitem", { name: "登録を解除" }));
+  }
+
+  it("unregisters the item on the current page, closes the menu and refreshes state", async () => {
+    await renderApp(makeState(3, { "1:4": foo }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    invokeMock.mockClear();
+    await removeFromMenu();
+
+    expect(invokeMock).toHaveBeenCalledWith("remove_app", { pageIdx: 1, slotIdx: 4 });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("get_state"));
+    expect(invokeMock).not.toHaveBeenCalledWith("launch_app", expect.anything());
+  });
+
+  it("shows the reason when unregistering fails", async () => {
+    await renderApp();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "remove_app") throw "write denied";
+      return makeState(3, { "0:0": foo });
+    });
+    await removeFromMenu();
+    expect(await screen.findByRole("alert")).toHaveTextContent("解除できません: write denied");
+  });
+});

@@ -42,6 +42,11 @@ impl<F: FileSystem> LauncherService<F> {
     pub fn rename_app(&mut self, page_idx: usize, slot_idx: usize, name: &str) -> Result<(), String> {
         self.mutate(|s| s.rename_app(page_idx, slot_idx, name))
     }
+
+    /// 登録を解除してスロットを空ける。アプリ本体には触れない。
+    pub fn remove_app(&mut self, page_idx: usize, slot_idx: usize) -> Result<(), String> {
+        self.mutate(|s| s.remove_app(page_idx, slot_idx).map(|_| ()))
+    }
 }
 
 #[cfg(test)]
@@ -138,6 +143,32 @@ mod tests {
         svc.store.fs.fail_on.set(Some("write"));
 
         assert!(svc.rename_app(0, 1, "エー").unwrap_err().contains("write denied"));
+        assert_eq!(svc.state().pages[0][1], Some(item("A")));
+    }
+
+    #[test]
+    fn remove_app_empties_the_slot_and_persists_it() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 1, item("A")).unwrap();
+        svc.remove_app(0, 1).unwrap();
+
+        assert_eq!(svc.state().pages[0][1], None);
+        assert_eq!(svc.store.load().unwrap().pages[0][1], None);
+    }
+
+    #[test]
+    fn remove_app_rejects_an_empty_slot() {
+        let mut svc = service(MockFs::default());
+        assert_eq!(svc.remove_app(0, 1), Err("Slot is empty".to_string()));
+    }
+
+    #[test]
+    fn remove_app_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 1, item("A")).unwrap();
+        svc.store.fs.fail_on.set(Some("write"));
+
+        assert!(svc.remove_app(0, 1).unwrap_err().contains("write denied"));
         assert_eq!(svc.state().pages[0][1], Some(item("A")));
     }
 

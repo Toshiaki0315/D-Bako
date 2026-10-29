@@ -80,6 +80,11 @@ fn rename_app(page_idx: usize, slot_idx: usize, name: String, state: State<'_, A
     state.launcher.lock().unwrap().rename_app(page_idx, slot_idx, &name)
 }
 
+#[tauri::command]
+fn remove_app(page_idx: usize, slot_idx: usize, state: State<'_, AppState>) -> Result<(), String> {
+    state.launcher.lock().unwrap().remove_app(page_idx, slot_idx)
+}
+
 /// 設定ウィンドウに見せる値。「起動時に実行する」は OS への登録状態そのものなので、保存せず毎回問い合わせる。
 #[derive(serde::Serialize)]
 struct SettingsView { always_on_top: bool, launch_at_login: bool }
@@ -192,7 +197,8 @@ pub fn run() {
             get_settings,
             set_always_on_top,
             set_launch_at_login,
-            rename_app
+            rename_app,
+            remove_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

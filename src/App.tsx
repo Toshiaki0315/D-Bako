@@ -15,7 +15,7 @@ type TipState = { name: string; x: number; y: number };
 type MenuState = { slot: number; x: number; y: number };
 
 /** 右クリックメニューの大きさ (px)。App.css の .context-menu と合わせる。 */
-const CONTEXT_MENU_SIZE = { width: 150, height: 36 };
+const CONTEXT_MENU_SIZE = { width: 150, height: 62 };
 
 /** マウスの近くに出るアプリ名の吹き出し。 */
 function Tooltip({ name, x, y }: TipState) {
@@ -84,7 +84,7 @@ function TextDialog({ title, inputLabel, placeholder, initialValue = "", onSubmi
 }
 
 /** 登録済みアイテムの右クリックメニュー。メニューの外をクリックするか Escape で閉じる。 */
-function ContextMenu({ x, y, onRename, onClose }: { x: number; y: number; onRename: () => void; onClose: () => void }) {
+function ContextMenu({ x, y, onRename, onRemove, onClose }: { x: number; y: number; onRename: () => void; onRemove: () => void; onClose: () => void }) {
   const { left, top } = contextMenuPosition(x, y, window.innerWidth, window.innerHeight, CONTEXT_MENU_SIZE);
   return (
     <div
@@ -95,6 +95,7 @@ function ContextMenu({ x, y, onRename, onClose }: { x: number; y: number; onRena
     >
       <div role="menu" className="context-menu" style={{ left, top }} onClick={(e) => e.stopPropagation()}>
         <button type="button" role="menuitem" autoFocus onClick={onRename}>名前を変更…</button>
+        <button type="button" role="menuitem" onClick={onRemove}>登録を解除</button>
       </div>
     </div>
   );
@@ -110,12 +111,12 @@ export default function App() {
   const [renameSlot, setRenameSlot] = useState<number | null>(null);
 
   /** 登録系の操作を実行し、失敗したら理由を表示する。どちらの場合も最新の状態を読み直す。 */
-  async function register(action: () => Promise<unknown>) {
+  async function register(action: () => Promise<unknown>, failure = "登録できません") {
     try {
       await action();
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(`${failure}: ${e}`);
     }
     await fetchState();
   }
@@ -197,7 +198,7 @@ export default function App() {
         </div>
       </div>
       {tip && <Tooltip {...tip} />}
-      {error && <p role="alert" className="error">登録できません: {error}</p>}
+      {error && <p role="alert" className="error">{error}</p>}
       <div className="pager">
         <button aria-label="Previous page" onClick={() => setCurrentPage(p => clampPage(p - 1, state.max_pages))} disabled={currentPage === 0}><Chevron direction="left" /></button>
         <span>{currentPage + 1} / {state.max_pages}</span>
@@ -217,6 +218,7 @@ export default function App() {
           x={menu.x}
           y={menu.y}
           onRename={() => { setRenameSlot(menu.slot); setMenu(null); }}
+          onRemove={() => { setMenu(null); register(() => invoke("remove_app", { pageIdx: currentPage, slotIdx: menu.slot }), "解除できません"); }}
           onClose={() => setMenu(null)}
         />
       )}
