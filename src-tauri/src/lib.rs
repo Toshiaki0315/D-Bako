@@ -10,10 +10,11 @@ pub mod storage;
 pub mod window;
 use std::sync::Mutex;
 use tauri::{Manager, State};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_shell::ShellExt;
 use core::{AppItem, LauncherState};
 use service::LauncherService;
-use settings::{Settings, SettingsService};
+use settings::SettingsService;
 use storage::{StateStore, StdFs};
 
 struct AppState { launcher: Mutex<LauncherService<StdFs>>, settings: Mutex<SettingsService<StdFs>> }
@@ -79,8 +80,25 @@ fn rename_app(page_idx: usize, slot_idx: usize, name: String, state: State<'_, A
     state.launcher.lock().unwrap().rename_app(page_idx, slot_idx, &name)
 }
 
+/// 設定ウィンドウに見せる値。「起動時に実行する」は OS への登録状態そのものなので、保存せず毎回問い合わせる。
+#[derive(serde::Serialize)]
+struct SettingsView { always_on_top: bool, launch_at_login: bool }
+
 #[tauri::command]
-fn get_settings(state: State<'_, AppState>) -> Settings { state.settings.lock().unwrap().settings().clone() }
+fn get_settings(app: tauri::AppHandle, state: State<'_, AppState>) -> SettingsView {
+    SettingsView {
+        always_on_top: state.settings.lock().unwrap().settings().always_on_top,
+        launch_at_login: app.autolaunch().is_enabled().unwrap_or(false),
+    }
+}
+
+/// ログイン時に起動するよう OS (~/Library/LaunchAgents) に登録・解除する。
+#[tauri::command]
+fn set_launch_at_login(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+    let autolaunch = app.autolaunch();
+    let result = if enabled { autolaunch.enable() } else { autolaunch.disable() };
+    result.map_err(|e| e.to_string())
+}
 
 /// 保存できてからメインウィンドウに反映する (次回起動時の状態と食い違わないように)。
 /// 設定ウィンドウから呼ばれるので、呼び出し元ではなくメインウィンドウを対象にする。
@@ -131,6 +149,7 @@ fn lock_aspect_ratio(window: &tauri::WebviewWindow) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
         // 覚えるのはメインウィンドウの大きさだけ (設定ウィンドウは対象外)
@@ -172,6 +191,7 @@ pub fn run() {
             get_app_icon,
             get_settings,
             set_always_on_top,
+            set_launch_at_login,
             rename_app
         ])
         .build(tauri::generate_context!())

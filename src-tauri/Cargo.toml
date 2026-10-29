@@ -23,6 +23,7 @@ icns = "0.3"
 base64 = "0.22"
 url = "2"
 ureq = "2"
+tauri-plugin-autostart = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

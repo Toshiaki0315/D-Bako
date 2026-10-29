@@ -45,6 +45,7 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 /* 設定ウィンドウ (別ウィンドウ。固定サイズなので px で書く) */
 .settings-view { box-sizing: border-box; height: 100%; padding: 20px 24px; }
 .setting-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.setting-row + .setting-row { margin-top: 12px; }
 .setting-row input { margin: 0; accent-color: #4a90e2; }
 .settings-error { margin: 10px 0 0; color: #ff8a80; font-size: 12px; }
 /* 登録済みアイテムの右クリックメニュー: 文字が読めるよう固定サイズ (px)。寸法は App.tsx の CONTEXT_MENU_SIZE と合わせる */

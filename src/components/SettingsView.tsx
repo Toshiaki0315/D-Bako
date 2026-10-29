@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-type Settings = { always_on_top: boolean };
+type Settings = { always_on_top: boolean; launch_at_login: boolean };
 
-/** 設定ウィンドウの中身。変更はその場でメインウィンドウに反映・保存される。 */
+/** チェックボックスで切り替える項目と、変更を反映するコマンド。 */
+const TOGGLES: { key: keyof Settings; label: string; command: string }[] = [
+  { key: "always_on_top", label: "常に前に表示", command: "set_always_on_top" },
+  { key: "launch_at_login", label: "起動時に実行する", command: "set_launch_at_login" },
+];
+
+/** 設定ウィンドウの中身。変更はその場で反映・保存される。 */
 export function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,13 +19,13 @@ export function SettingsView() {
   }, []);
 
   /** 先に見た目を切り替え、保存・反映に失敗したら元に戻す。 */
-  async function toggleAlwaysOnTop(enabled: boolean) {
-    setSettings({ always_on_top: enabled });
+  async function toggle(key: keyof Settings, command: string, enabled: boolean) {
+    setSettings((s) => s && { ...s, [key]: enabled });
     setError(null);
     try {
-      await invoke("set_always_on_top", { enabled });
+      await invoke(command, { enabled });
     } catch (err) {
-      setSettings({ always_on_top: !enabled });
+      setSettings((s) => s && { ...s, [key]: !enabled });
       setError(String(err));
     }
   }
@@ -28,10 +34,12 @@ export function SettingsView() {
 
   return (
     <div className="settings-view">
-      <label className="setting-row">
-        <input type="checkbox" checked={settings.always_on_top} onChange={(e) => toggleAlwaysOnTop(e.target.checked)} />
-        常に前に表示
-      </label>
+      {TOGGLES.map(({ key, label, command }) => (
+        <label key={key} className="setting-row">
+          <input type="checkbox" checked={settings[key]} onChange={(e) => toggle(key, command, e.target.checked)} />
+          {label}
+        </label>
+      ))}
       {error && <p role="alert" className="settings-error">変更できません: {error}</p>}
     </div>
   );

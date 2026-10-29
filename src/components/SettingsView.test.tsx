@@ -9,10 +9,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { SettingsView } from "./SettingsView";
 
-function mockSettings(alwaysOnTop: boolean, setAlwaysOnTop: (enabled: boolean) => Promise<void> = async () => {}) {
+function mockSettings(
+  alwaysOnTop: boolean,
+  setAlwaysOnTop: (enabled: boolean) => Promise<void> = async () => {},
+  launchAtLogin = false,
+  setLaunchAtLogin: (enabled: boolean) => Promise<void> = async () => {},
+) {
   invokeMock.mockImplementation(async (cmd: string, args?: { enabled: boolean }) => {
-    if (cmd === "get_settings") return { always_on_top: alwaysOnTop };
+    if (cmd === "get_settings") return { always_on_top: alwaysOnTop, launch_at_login: launchAtLogin };
     if (cmd === "set_always_on_top") return setAlwaysOnTop(args!.enabled);
+    if (cmd === "set_launch_at_login") return setLaunchAtLogin(args!.enabled);
     return undefined;
   });
 }
@@ -31,13 +37,13 @@ describe("SettingsView", () => {
   });
 
   it("shows nothing until the settings arrive", async () => {
-    let resolve!: (s: { always_on_top: boolean }) => void;
+    let resolve!: (s: { always_on_top: boolean; launch_at_login: boolean }) => void;
     invokeMock.mockReturnValue(new Promise((r) => (resolve = r)));
     render(<SettingsView />);
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
 
-    resolve({ always_on_top: false });
-    expect(await screen.findByRole("checkbox")).not.toBeChecked();
+    resolve({ always_on_top: false, launch_at_login: false });
+    expect(await screen.findByRole("checkbox", { name: "常に前に表示" })).not.toBeChecked();
   });
 
   it("turns always-on-top on and off", async () => {
@@ -80,5 +86,40 @@ describe("SettingsView", () => {
     fail = false;
     await userEvent.click(checkbox);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  describe("launch at login", () => {
+    const loginCheckbox = () => screen.getByRole("checkbox", { name: "起動時に実行する" });
+
+    it("shows whether the app is registered to launch at login", async () => {
+      mockSettings(false, undefined, true);
+      await renderSettings();
+      expect(loginCheckbox()).toBeChecked();
+    });
+
+    it("turns launch at login on and off without touching always-on-top", async () => {
+      mockSettings(false);
+      const onTop = await renderSettings();
+
+      await userEvent.click(loginCheckbox());
+      expect(invokeMock).toHaveBeenCalledWith("set_launch_at_login", { enabled: true });
+      expect(loginCheckbox()).toBeChecked();
+
+      await userEvent.click(loginCheckbox());
+      expect(invokeMock).toHaveBeenCalledWith("set_launch_at_login", { enabled: false });
+      expect(loginCheckbox()).not.toBeChecked();
+
+      expect(invokeMock).not.toHaveBeenCalledWith("set_always_on_top", expect.anything());
+      expect(onTop).not.toBeChecked();
+    });
+
+    it("keeps the previous value and shows the reason when registration fails", async () => {
+      mockSettings(false, undefined, false, async () => { throw "launchctl failed"; });
+      await renderSettings();
+
+      await userEvent.click(loginCheckbox());
+      expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: launchctl failed");
+      expect(loginCheckbox()).not.toBeChecked();
+    });
   });
 });
