@@ -53,6 +53,11 @@ impl<F: FileSystem> LauncherService<F> {
         self.mutate(|s| s.move_app((page_idx, from_slot), (page_idx, to_slot)))
     }
 
+    /// グリッドの横・縦の数とページ数を変える。収まらなくなったアイテムは空きスロットへ移す。
+    pub fn set_layout(&mut self, cols: usize, rows: usize, max_pages: usize) -> Result<(), String> {
+        self.mutate(|s| s.set_layout(cols, rows, max_pages))
+    }
+
     /// 指定スロットに差し込み、埋まっていれば後ろへずらす。
     pub fn insert_app(&mut self, page_idx: usize, slot_idx: usize, app: AppItem) -> Result<(), String> {
         self.mutate(|s| s.insert_app(page_idx, slot_idx, app))
@@ -223,6 +228,28 @@ mod tests {
         assert!(svc.insert_app(0, 0, item("X")).unwrap_err().contains("write denied"));
         assert_eq!(svc.state().pages[0][0], Some(item("A")));
         assert_eq!(svc.state().pages[0][1], None);
+    }
+
+    #[test]
+    fn set_layout_changes_and_persists_the_grid() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 7, item("A")).unwrap();
+        svc.set_layout(3, 2, 4).unwrap();
+
+        let saved = svc.store.load().unwrap();
+        assert_eq!((saved.cols, saved.rows, saved.max_pages), (3, 2, 4));
+        assert_eq!(saved.pages[0][0], Some(item("A")));
+    }
+
+    #[test]
+    fn set_layout_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 7, item("A")).unwrap();
+        svc.store.fs.fail_on.set(Some("write"));
+
+        assert!(svc.set_layout(3, 2, 4).unwrap_err().contains("write denied"));
+        assert_eq!((svc.state().cols, svc.state().rows, svc.state().max_pages), (4, 2, 10));
+        assert_eq!(svc.state().pages[0][7], Some(item("A")));
     }
 
     #[test]

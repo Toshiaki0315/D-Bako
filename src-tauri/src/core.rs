@@ -23,14 +23,54 @@ impl AppItem {
 }
 /// 表示名の最大文字数。吹き出しに収まらない長さは省略表示になる。
 pub const MAX_NAME_CHARS: usize = 100;
+/// グリッドの横・縦の数と、ページ数の上限。
+pub const MAX_COLS: usize = 8;
+pub const MAX_ROWS: usize = 6;
+pub const MAX_PAGES: usize = 10;
+/// グリッドを保存していない古いファイルは、この大きさ (4 × 2) として読む。
+pub const DEFAULT_COLS: usize = 4;
+pub const DEFAULT_ROWS: usize = 2;
+fn default_cols() -> usize { DEFAULT_COLS }
+fn default_rows() -> usize { DEFAULT_ROWS }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LauncherState { pub pages: Vec<Vec<Option<AppItem>>>, pub max_pages: usize }
+pub struct LauncherState {
+    pub pages: Vec<Vec<Option<AppItem>>>,
+    pub max_pages: usize,
+    #[serde(default = "default_cols")]
+    pub cols: usize,
+    #[serde(default = "default_rows")]
+    pub rows: usize,
+}
+fn valid_layout(cols: usize, rows: usize, pages: usize) -> bool {
+    (1..=MAX_COLS).contains(&cols) && (1..=MAX_ROWS).contains(&rows) && (1..=MAX_PAGES).contains(&pages)
+}
 impl LauncherState {
     pub fn new(max_pages: usize) -> Self {
-        let max_pages = max_pages.clamp(1, 10);
-        let mut pages = Vec::with_capacity(max_pages);
-        for _ in 0..max_pages { pages.push(vec![None; 8]); }
-        Self { pages, max_pages }
+        let max_pages = max_pages.clamp(1, MAX_PAGES);
+        let pages = vec![vec![None; DEFAULT_COLS * DEFAULT_ROWS]; max_pages];
+        Self { pages, max_pages, cols: DEFAULT_COLS, rows: DEFAULT_ROWS }
+    }
+    pub fn slots_per_page(&self) -> usize { self.cols * self.rows }
+    /// グリッドの大きさとページ数を変える。各アイテムは同じページの同じ番号 (読む順) の位置を保ち、
+    /// 収まらなくなったものは読む順に空きスロットへ移す。空きが足りなければ何も変えずにエラー。
+    pub fn set_layout(&mut self, cols: usize, rows: usize, max_pages: usize) -> Result<(), String> {
+        if !valid_layout(cols, rows, max_pages) { return Err("Invalid layout".to_string()); }
+        let size = cols * rows;
+        let mut pages = vec![vec![None; size]; max_pages];
+        let mut overflow = Vec::new();
+        for (p, page) in self.pages.iter().enumerate() {
+            for (i, slot) in page.iter().enumerate() {
+                let Some(item) = slot else { continue };
+                if p < max_pages && i < size { pages[p][i] = Some(item.clone()); } else { overflow.push(item.clone()); }
+            }
+        }
+        let mut empties = pages.iter_mut().flatten().filter(|s| s.is_none());
+        for item in overflow {
+            let slot = empties.next().ok_or_else(|| "Not enough slots for the registered items".to_string())?;
+            *slot = Some(item);
+        }
+        *self = Self { pages, max_pages, cols, rows };
+        Ok(())
     }
     /// 永続化用に JSON 文字列へ変換する。
     pub fn to_json(&self) -> Result<String, String> {
@@ -39,14 +79,15 @@ impl LauncherState {
     /// JSON から復元する。ファイルは外部入力なので不変条件（ページ数・スロット数）を検証する。
     pub fn from_json(json: &str) -> Result<Self, String> {
         let state: Self = serde_json::from_str(json).map_err(|e| e.to_string())?;
-        if !(1..=10).contains(&state.max_pages) { return Err("Invalid max_pages".to_string()); }
+        if !(1..=MAX_PAGES).contains(&state.max_pages) { return Err("Invalid max_pages".to_string()); }
+        if !valid_layout(state.cols, state.rows, state.max_pages) { return Err("Invalid layout".to_string()); }
         if state.pages.len() != state.max_pages { return Err("Page count does not match max_pages".to_string()); }
-        if state.pages.iter().any(|p| p.len() != 8) { return Err("Each page must have 8 slots".to_string()); }
+        if state.pages.iter().any(|p| p.len() != state.slots_per_page()) { return Err("Page size does not match the grid".to_string()); }
         Ok(state)
     }
     fn check_pos(&self, page_idx: usize, slot_idx: usize) -> Result<(), String> {
         if page_idx >= self.max_pages { return Err("Invalid page index".to_string()); }
-        if slot_idx >= 8 { return Err("Invalid slot index".to_string()); }
+        if slot_idx >= self.slots_per_page() { return Err("Invalid slot index".to_string()); }
         Ok(())
     }
     pub fn add_app(&mut self, page_idx: usize, slot_idx: usize, app: AppItem) -> Result<(), String> {
@@ -142,7 +183,7 @@ mod tests {
     }
     #[test] fn test_from_json_rejects_wrong_slot_count() {
         let json = r#"{"pages":[[null,null]],"max_pages":1}"#;
-        assert_eq!(LauncherState::from_json(json).unwrap_err(), "Each page must have 8 slots");
+        assert_eq!(LauncherState::from_json(json).unwrap_err(), "Page size does not match the grid");
     }
     #[test] fn test_add_to_empty_slot_places_the_item() {
         let mut s = LauncherState::new(2);
@@ -284,5 +325,80 @@ mod tests {
         let mut s = LauncherState::new(1);
         assert_eq!(s.insert_app(1, 0, item("X")), Err("Invalid page index".to_string()));
         assert_eq!(s.insert_app(0, 8, item("X")), Err("Invalid slot index".to_string()));
+    }
+    fn names(s: &LauncherState, page: usize) -> Vec<Option<&str>> {
+        s.pages[page].iter().map(|x| x.as_ref().map(|a| a.name.as_str())).collect()
+    }
+    #[test] fn test_new_state_uses_the_default_4x2_grid() {
+        let s = LauncherState::new(2);
+        assert_eq!((s.cols, s.rows), (DEFAULT_COLS, DEFAULT_ROWS));
+        assert_eq!(s.slots_per_page(), 8);
+    }
+    #[test] fn test_from_json_reads_an_old_file_without_a_grid_as_4x2() {
+        let json = r#"{"pages":[[null,null,null,null,null,null,null,null]],"max_pages":1}"#;
+        let s = LauncherState::from_json(json).unwrap();
+        assert_eq!((s.cols, s.rows), (4, 2));
+    }
+    #[test] fn test_json_roundtrip_preserves_the_grid() {
+        let mut s = LauncherState::new(1);
+        s.set_layout(3, 3, 2).unwrap();
+        let restored = LauncherState::from_json(&s.to_json().unwrap()).unwrap();
+        assert_eq!((restored.cols, restored.rows, restored.max_pages), (3, 3, 2));
+        assert_eq!(restored.pages[1].len(), 9);
+    }
+    #[test] fn test_from_json_rejects_an_out_of_range_grid() {
+        for (cols, rows) in [(0, 2), (MAX_COLS + 1, 2), (4, 0), (4, MAX_ROWS + 1)] {
+            let page = format!("[{}]", vec!["null"; cols * rows].join(","));
+            let json = format!(r#"{{"pages":[{page}],"max_pages":1,"cols":{cols},"rows":{rows}}}"#);
+            assert_eq!(LauncherState::from_json(&json).unwrap_err(), "Invalid layout", "{cols}x{rows}");
+        }
+    }
+    #[test] fn test_positions_follow_the_grid_size() {
+        let mut s = LauncherState::new(1);
+        s.set_layout(4, 3, 1).unwrap();
+        assert!(s.add_app(0, 11, item("A")).is_ok());
+        assert_eq!(s.add_app(0, 12, item("B")), Err("Invalid slot index".to_string()));
+    }
+    #[test] fn test_set_layout_growing_keeps_every_item_in_place() {
+        let mut s = LauncherState::new(2);
+        s.add_app(0, 0, item("A")).unwrap();
+        s.add_app(1, 7, item("B")).unwrap();
+        s.set_layout(5, 3, 3).unwrap();
+        assert_eq!((s.cols, s.rows, s.max_pages, s.pages.len()), (5, 3, 3, 3));
+        assert!(s.pages.iter().all(|p| p.len() == 15));
+        assert_eq!(s.pages[0][0], Some(item("A")));
+        assert_eq!(s.pages[1][7], Some(item("B")));
+    }
+    #[test] fn test_set_layout_moves_items_that_no_longer_fit_into_empty_slots_in_order() {
+        let mut s = LauncherState::new(2);
+        s.add_app(0, 0, item("A")).unwrap();
+        s.add_app(0, 5, item("B")).unwrap();
+        s.add_app(0, 7, item("C")).unwrap();
+        s.add_app(1, 6, item("D")).unwrap();
+        s.set_layout(2, 2, 2).unwrap();
+        assert_eq!(names(&s, 0), [Some("A"), Some("B"), Some("C"), Some("D")]);
+        assert_eq!(names(&s, 1), [None, None, None, None]);
+    }
+    #[test] fn test_set_layout_moves_items_from_removed_pages() {
+        let mut s = LauncherState::new(3);
+        s.add_app(0, 0, item("A")).unwrap();
+        s.add_app(2, 3, item("B")).unwrap();
+        s.set_layout(4, 2, 1).unwrap();
+        assert_eq!(s.pages.len(), 1);
+        assert_eq!(names(&s, 0)[..2], [Some("A"), Some("B")]);
+    }
+    #[test] fn test_set_layout_rejects_when_the_items_do_not_fit_without_changing_anything() {
+        let mut s = LauncherState::new(1);
+        for i in 0..5 { s.add_app(0, i, item(&i.to_string())).unwrap(); }
+        let before = s.pages.clone();
+        assert_eq!(s.set_layout(2, 2, 1), Err("Not enough slots for the registered items".to_string()));
+        assert_eq!((s.cols, s.rows, s.max_pages), (4, 2, 1));
+        assert_eq!(s.pages, before);
+    }
+    #[test] fn test_set_layout_rejects_an_out_of_range_layout() {
+        let mut s = LauncherState::new(1);
+        for (c, r, p) in [(0, 2, 1), (MAX_COLS + 1, 2, 1), (4, 0, 1), (4, MAX_ROWS + 1, 1), (4, 2, 0), (4, 2, MAX_PAGES + 1)] {
+            assert_eq!(s.set_layout(c, r, p), Err("Invalid layout".to_string()), "{c}x{r}x{p}");
+        }
     }
 }

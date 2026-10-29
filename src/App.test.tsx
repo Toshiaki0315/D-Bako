@@ -6,6 +6,7 @@ const invokeMock = vi.fn();
 const unlistenMock = vi.fn();
 type DropPayload = { paths?: string[]; position?: { x: number; y: number } };
 let dropHandler: ((event: { payload: DropPayload }) => Promise<void>) | null;
+let changedHandler: (() => void) | null;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -15,6 +16,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, handler: typeof dropHandler) => {
     if (name === "tauri://drag-drop") dropHandler = handler;
+    if (name === "launcher-changed") changedHandler = handler as unknown as () => void;
     return unlistenMock;
   }),
 }));
@@ -23,11 +25,11 @@ import App from "./App";
 
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
 
-function makeState(maxPages = 3, filled: Record<string, AppItem> = {}) {
+function makeState(maxPages = 3, filled: Record<string, AppItem> = {}, cols = 4, rows = 2) {
   const pages = Array.from({ length: maxPages }, (_, p) =>
-    Array.from({ length: 8 }, (_, s) => filled[`${p}:${s}`] ?? null),
+    Array.from({ length: cols * rows }, (_, s) => filled[`${p}:${s}`] ?? null),
   );
-  return { pages, max_pages: maxPages };
+  return { pages, max_pages: maxPages, cols, rows };
 }
 
 const foo: AppItem = { path: "/Applications/Foo.app", name: "Foo" };
@@ -690,5 +692,33 @@ describe("App drag and drop", () => {
     document.elementFromPoint = vi.fn(() => document.body);
     await drop(["/Applications/Bar.app"], { x: 900, y: 10 });
     expect(invokeMock).toHaveBeenCalledWith("add_app_to_first_empty", { pageIdx: 0, path: "/Applications/Bar.app" });
+  });
+});
+
+describe("App grid layout", () => {
+  it("lays out the slots with the grid size from the state", async () => {
+    await renderApp(makeState(2, { "0:0": foo }, 3, 3));
+    const grid = document.querySelector<HTMLElement>(".grid")!;
+    expect(grid.style.getPropertyValue("--cols")).toBe("3");
+    expect(grid.style.getPropertyValue("--rows")).toBe("3");
+    expect(document.querySelectorAll(".slot")).toHaveLength(9);
+  });
+
+  it("reloads the state when the layout is changed from the settings window", async () => {
+    await renderApp();
+    mockBackend(makeState(2, {}, 5, 1));
+    await act(async () => { changedHandler!(); });
+    expect(document.querySelectorAll(".slot")).toHaveLength(5);
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+  });
+
+  it("moves to the last page when the current page no longer exists", async () => {
+    await renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "Previous page" }));
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+
+    mockBackend(makeState(2));
+    await act(async () => { changedHandler!(); });
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
   });
 });

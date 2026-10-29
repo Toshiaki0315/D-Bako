@@ -123,3 +123,53 @@ describe("SettingsView", () => {
     });
   });
 });
+
+describe("SettingsView layout", () => {
+  type Layout = { cols: number; rows: number; pages: number };
+
+  function mockLayout(layout: Layout, setLayout: (l: Layout) => Promise<void> = async () => {}) {
+    invokeMock.mockImplementation(async (cmd: string, args?: Layout) => {
+      if (cmd === "get_settings") return { always_on_top: false, launch_at_login: false };
+      if (cmd === "get_layout") return layout;
+      if (cmd === "set_layout") return setLayout(args!);
+    });
+  }
+
+  it("shows the current grid size and page count", async () => {
+    mockLayout({ cols: 4, rows: 2, pages: 10 });
+    render(<SettingsView />);
+    expect(await screen.findByRole("combobox", { name: "横" })).toHaveValue("4");
+    expect(screen.getByRole("combobox", { name: "縦" })).toHaveValue("2");
+    expect(screen.getByRole("combobox", { name: "ページ" })).toHaveValue("10");
+  });
+
+  it("offers 1-8 columns, 1-6 rows and 1-10 pages", async () => {
+    mockLayout({ cols: 4, rows: 2, pages: 10 });
+    render(<SettingsView />);
+    const values = (name: string) =>
+      Array.from(screen.getByRole("combobox", { name }).querySelectorAll("option"), (o) => o.value);
+    await screen.findByRole("combobox", { name: "横" });
+    expect(values("横")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+    expect(values("縦")).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(values("ページ")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  });
+
+  it("applies a new value right away", async () => {
+    mockLayout({ cols: 4, rows: 2, pages: 10 });
+    render(<SettingsView />);
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "横" }), "6");
+    expect(invokeMock).toHaveBeenCalledWith("set_layout", { cols: 6, rows: 2, pages: 10 });
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "ページ" }), "3");
+    expect(invokeMock).toHaveBeenCalledWith("set_layout", { cols: 6, rows: 2, pages: 3 });
+    expect(screen.getByRole("combobox", { name: "ページ" })).toHaveValue("3");
+  });
+
+  it("goes back and shows the reason when the items do not fit", async () => {
+    mockLayout({ cols: 4, rows: 2, pages: 10 }, async () => { throw "Not enough slots for the registered items"; });
+    render(<SettingsView />);
+    const rows = await screen.findByRole("combobox", { name: "縦" });
+    await userEvent.selectOptions(rows, "1");
+    expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: Not enough slots for the registered items");
+    expect(rows).toHaveValue("2");
+  });
+});

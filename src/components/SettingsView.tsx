@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 type Settings = { always_on_top: boolean; launch_at_login: boolean };
+type Layout = { cols: number; rows: number; pages: number };
+
+/** グリッドの横・縦の数とページ数の選択肢 (Rust 側の MAX_COLS / MAX_ROWS / MAX_PAGES と合わせる)。 */
+const LAYOUT_FIELDS: { key: keyof Layout; label: string; max: number }[] = [
+  { key: "cols", label: "横", max: 8 },
+  { key: "rows", label: "縦", max: 6 },
+  { key: "pages", label: "ページ", max: 10 },
+];
 
 /** チェックボックスで切り替える項目と、変更を反映するコマンド。 */
 const TOGGLES: { key: keyof Settings; label: string; command: string }[] = [
@@ -12,10 +20,12 @@ const TOGGLES: { key: keyof Settings; label: string; command: string }[] = [
 /** 設定ウィンドウの中身。変更はその場で反映・保存される。 */
 export function SettingsView() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [layout, setLayout] = useState<Layout | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<Settings>("get_settings").then(setSettings);
+    invoke<Layout>("get_layout").then(setLayout);
   }, []);
 
   /** 先に見た目を切り替え、保存・反映に失敗したら元に戻す。 */
@@ -30,6 +40,19 @@ export function SettingsView() {
     }
   }
 
+  /** 先に見た目を変え、反映できなければ (アイテムが収まらないなど) 元に戻す。 */
+  async function changeLayout(next: Layout) {
+    const before = layout;
+    setLayout(next);
+    setError(null);
+    try {
+      await invoke("set_layout", next);
+    } catch (err) {
+      setLayout(before);
+      setError(String(err));
+    }
+  }
+
   if (!settings) return null;
 
   return (
@@ -40,6 +63,18 @@ export function SettingsView() {
           {label}
         </label>
       ))}
+      {layout && (
+        <div className="layout-row">
+          {LAYOUT_FIELDS.map(({ key, label, max }) => (
+            <label key={key}>
+              {label}
+              <select value={layout[key]} onChange={(e) => changeLayout({ ...layout, [key]: Number(e.target.value) })}>
+                {Array.from({ length: max }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
       {error && <p role="alert" className="settings-error">変更できません: {error}</p>}
     </div>
   );

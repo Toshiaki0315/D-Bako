@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { pickAppPath, wrapPage } from "./lib/launcher";
@@ -11,7 +11,7 @@ import type { Point } from "./lib/drag";
 import { AppIcon } from "./components/AppIcon";
 
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
-type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
+type LauncherState = { pages: (AppItem | null)[][]; max_pages: number; cols: number; rows: number };
 
 type TipState = { name: string; x: number; y: number };
 type MenuState = { slot: number; x: number; y: number };
@@ -164,9 +164,17 @@ export default function App() {
     return () => window.removeEventListener("paste", onPaste);
   }, [currentPage]);
 
+  // 設定ウィンドウでグリッドの大きさやページ数が変わると、Rust 側から知らされる
+  useEffect(() => {
+    const unlisten = listen("launcher-changed", () => fetchState());
+    return () => { unlisten.then(f => f()); };
+  }, []);
+
+  /** 最新の状態を読み直す。ページが減って今のページが無くなったら最後のページへ移る。 */
   async function fetchState() {
     const s = await invoke<LauncherState>("get_state");
     setState(s);
+    setCurrentPage(p => Math.min(p, s.max_pages - 1));
   }
 
   async function handleLaunch(app: AppItem) {
@@ -247,7 +255,7 @@ export default function App() {
     <div className="container">
       <div className="drag-region" data-tauri-drag-region />
       <div className="grid-area">
-        <div className="grid">
+        <div className="grid" style={{ "--cols": state.cols, "--rows": state.rows } as CSSProperties}>
           {currentSlots.map((app, i) => (
             <div
               key={i}

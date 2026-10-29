@@ -9,7 +9,7 @@ pub mod settings;
 pub mod storage;
 pub mod window;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_shell::ShellExt;
 use core::{AppItem, LauncherState};
@@ -139,6 +139,35 @@ fn set_always_on_top(enabled: bool, app: tauri::AppHandle, state: State<'_, AppS
     main.set_always_on_top(enabled).map_err(|e| e.to_string())
 }
 
+/// 設定ウィンドウに見せるグリッドの大きさとページ数。
+#[derive(serde::Serialize)]
+struct LayoutView { cols: usize, rows: usize, pages: usize }
+
+#[tauri::command]
+fn get_layout(state: State<'_, AppState>) -> LayoutView {
+    let launcher = state.launcher.lock().unwrap();
+    let s = launcher.state();
+    LayoutView { cols: s.cols, rows: s.rows, pages: s.max_pages }
+}
+
+/// グリッドの大きさとページ数を変え、マスの大きさを保つようにメインウィンドウの大きさを合わせる。
+/// 設定ウィンドウから呼ばれるので、メインウィンドウには再読み込みを知らせる。
+#[tauri::command]
+fn set_layout(cols: usize, rows: usize, pages: usize, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let main = app.get_webview_window("main").ok_or("main window not found")?;
+    let mut launcher = state.launcher.lock().unwrap();
+    let from = (launcher.state().cols, launcher.state().rows);
+    launcher.set_layout(cols, rows, pages)?;
+    drop(launcher);
+    let resize = || -> tauri::Result<()> {
+        let width = main.inner_size()?.to_logical::<f64>(main.scale_factor()?).width;
+        let size = window::resize_for_layout(width, from, (cols, rows), screen_size(&main)?);
+        fit_window_to_grid(&main, cols, rows, size)
+    };
+    resize().map_err(|e| e.to_string())?;
+    main.emit("launcher-changed", ()).map_err(|e| e.to_string())
+}
+
 /// アイコン抽出はファイル I/O を伴うため、UI/非同期ランタイムを塞がないよう別スレッドで実行する。
 #[tauri::command]
 async fn get_app_icon(path: String) -> Result<String, String> {
@@ -161,23 +190,36 @@ fn flush_settings<R: tauri::Runtime>(app: &impl Manager<R>) {
     }
 }
 
-/// 前回のウィンドウ幅で開く。画面より大きくならないよう、今いる画面の幅に収める。
-fn restore_window_size(window: &tauri::WebviewWindow, saved_width: Option<f64>) -> tauri::Result<()> {
-    let screen_width = window.current_monitor()?.map(|m| m.size().to_logical::<f64>(m.scale_factor()).width);
-    let (width, height) = window::restore_size(saved_width, screen_width);
+/// 今いる画面のうち、メニューバーと Dock を除いて使える大きさ (論理ピクセル)。
+fn screen_size(window: &tauri::WebviewWindow) -> tauri::Result<Option<(f64, f64)>> {
+    Ok(window.current_monitor()?.map(|m| {
+        let size = m.work_area().size.to_logical::<f64>(m.scale_factor());
+        (size.width, size.height)
+    }))
+}
+
+/// グリッドの大きさに合わせて、最小サイズ・縦横比・ウィンドウの大きさを設定する。
+fn fit_window_to_grid(window: &tauri::WebviewWindow, cols: usize, rows: usize, (width, height): (f64, f64)) -> tauri::Result<()> {
+    let (min_w, min_h) = window::min_size(cols, rows);
+    window.set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))?;
+    #[cfg(target_os = "macos")]
+    lock_aspect_ratio(window, cols, rows)?;
     window.set_size(tauri::LogicalSize::new(width, height))
 }
 
 /// リサイズ中も縦横比を保つ (tao には API が無いので NSWindow に直接設定する)。
 #[cfg(target_os = "macos")]
-fn lock_aspect_ratio(window: &tauri::WebviewWindow) -> tauri::Result<()> {
-    use objc2_app_kit::NSWindow;
-    use objc2_foundation::NSSize;
-    let ptr = window.ns_window()? as *mut NSWindow;
-    // SAFETY: ns_window() は生きている NSWindow を指す。setup はメインスレッドで呼ばれる。
-    let ns_window = unsafe { &*ptr };
-    ns_window.setContentAspectRatio(NSSize::new(window::BASE_WIDTH, window::BASE_HEIGHT));
-    Ok(())
+fn lock_aspect_ratio(window: &tauri::WebviewWindow, cols: usize, rows: usize) -> tauri::Result<()> {
+    let window = window.clone();
+    let (w, h) = window::base_size(cols, rows);
+    window.clone().run_on_main_thread(move || {
+        use objc2_app_kit::NSWindow;
+        use objc2_foundation::NSSize;
+        let Ok(ptr) = window.ns_window() else { return };
+        // SAFETY: ns_window() は生きている NSWindow を指し、ここはメインスレッドで実行される。
+        let ns_window = unsafe { &*(ptr as *mut NSWindow) };
+        ns_window.setContentAspectRatio(NSSize::new(w, h));
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -202,17 +244,16 @@ pub fn run() {
         })
         .setup(|app| {
             let window = app.get_webview_window("main").ok_or("main window not found")?;
-            let (min_w, min_h) = window::min_size();
-            window.set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))?;
-            #[cfg(target_os = "macos")]
-            lock_aspect_ratio(&window)?;
 
             // 状態と設定は OS 標準のアプリデータ領域 (~/Library/Application Support/<identifier>) に保存する
             let data_dir = app.path().app_data_dir()?;
             let launcher = LauncherService::open(StateStore::new(StdFs, data_dir.join("state.json")));
             let settings = SettingsService::open(StdFs, data_dir.join("settings.json"));
             window.set_always_on_top(settings.settings().always_on_top)?;
-            restore_window_size(&window, settings.settings().window_width)?;
+            // 前回のウィンドウ幅で開く。画面より大きくならないよう、今いる画面に収める。
+            let (cols, rows) = (launcher.state().cols, launcher.state().rows);
+            let size = window::restore_size(settings.settings().window_width, cols, rows, screen_size(&window)?);
+            fit_window_to_grid(&window, cols, rows, size)?;
             app.manage(AppState { launcher: Mutex::new(launcher), settings: Mutex::new(settings) });
             Ok(())
         })
@@ -226,6 +267,8 @@ pub fn run() {
             get_app_icon,
             get_app_icon_stamp,
             get_settings,
+            get_layout,
+            set_layout,
             set_always_on_top,
             set_launch_at_login,
             rename_app,
