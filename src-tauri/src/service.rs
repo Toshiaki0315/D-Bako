@@ -38,6 +38,10 @@ impl<F: FileSystem> LauncherService<F> {
     pub fn add_app_to_first_empty(&mut self, page_idx: usize, app: AppItem) -> Result<(), String> {
         self.mutate(|s| s.add_app_to_first_empty(page_idx, app))
     }
+
+    pub fn rename_app(&mut self, page_idx: usize, slot_idx: usize, name: &str) -> Result<(), String> {
+        self.mutate(|s| s.rename_app(page_idx, slot_idx, name))
+    }
 }
 
 #[cfg(test)]
@@ -115,6 +119,26 @@ mod tests {
         let mut svc = service(MockFs::failing("write"));
         assert!(svc.add_app_to_slot(0, 0, item("A")).is_err());
         assert_eq!(svc.state().pages[0][0], None);
+    }
+
+    #[test]
+    fn rename_app_updates_and_persists_the_name() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 1, item("A")).unwrap();
+        svc.rename_app(0, 1, "エー").unwrap();
+
+        assert_eq!(svc.state().pages[0][1].as_ref().unwrap().name, "エー");
+        assert_eq!(svc.store.load().unwrap().pages[0][1].as_ref().unwrap().name, "エー");
+    }
+
+    #[test]
+    fn rename_app_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 1, item("A")).unwrap();
+        svc.store.fs.fail_on.set(Some("write"));
+
+        assert!(svc.rename_app(0, 1, "エー").unwrap_err().contains("write denied"));
+        assert_eq!(svc.state().pages[0][1], Some(item("A")));
     }
 
     #[test]

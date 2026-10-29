@@ -477,3 +477,106 @@ describe("App settings dialog", () => {
     expect(screen.getByRole("dialog", { name: "設定" })).toBeInTheDocument();
   });
 });
+
+describe("App rename", () => {
+  const filled = () => screen.getByRole("button", { name: "Foo" });
+
+  async function openRenameDialog() {
+    fireEvent.contextMenu(filled(), { clientX: 40, clientY: 60 });
+    await userEvent.click(screen.getByRole("menuitem", { name: "名前を変更…" }));
+    return screen.getByRole("textbox", { name: "名前" });
+  }
+
+  it("opens a context menu with a rename item on a registered item and hides the tooltip", async () => {
+    await renderApp();
+    fireEvent.mouseMove(filled(), { clientX: 40, clientY: 60 });
+    const event = fireEvent.contextMenu(filled(), { clientX: 40, clientY: 60 });
+
+    expect(event).toBe(false); // WebView 標準のメニューは出さない
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "名前を変更…" })).toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("does not open a context menu on an empty slot", async () => {
+    await renderApp();
+    fireEvent.contextMenu(document.querySelectorAll(".slot")[1]);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("closes the context menu with Escape or a click elsewhere, without opening the dialog", async () => {
+    await renderApp();
+    fireEvent.contextMenu(filled());
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(filled());
+    await userEvent.click(document.querySelector(".context-menu-layer")!);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    fireEvent.contextMenu(filled());
+    fireEvent.contextMenu(document.querySelector(".context-menu-layer")!);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("renames the item with the name entered in the dialog", async () => {
+    await renderApp();
+    const input = await openRenameDialog();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "名前を変更" })).toBeInTheDocument();
+    expect(input).toHaveValue("Foo");
+
+    invokeMock.mockClear();
+    await userEvent.clear(input);
+    await userEvent.type(input, "Googleカレンダー{Enter}");
+
+    expect(invokeMock).toHaveBeenCalledWith("rename_app", { pageIdx: 0, slotIdx: 0, name: "Googleカレンダー" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(invokeMock).toHaveBeenCalledWith("get_state");
+  });
+
+  it("renames an item on the current page", async () => {
+    await renderApp(makeState(3, { "1:4": foo }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    const input = await openRenameDialog();
+    await userEvent.type(input, "2{Enter}");
+    expect(invokeMock).toHaveBeenCalledWith("rename_app", { pageIdx: 1, slotIdx: 4, name: "Foo2" });
+  });
+
+  it("does not launch the item when it is right-clicked", async () => {
+    await renderApp();
+    await openRenameDialog();
+    expect(invokeMock).not.toHaveBeenCalledWith("launch_app", expect.anything());
+  });
+
+  it("ignores a blank name", async () => {
+    await renderApp();
+    const input = await openRenameDialog();
+    invokeMock.mockClear();
+    await userEvent.clear(input);
+    await userEvent.type(input, "   {Enter}");
+    expect(invokeMock).not.toHaveBeenCalledWith("rename_app", expect.anything());
+    expect(screen.getByRole("dialog", { name: "名前を変更" })).toBeInTheDocument();
+  });
+
+  it("stays open and shows the reason when renaming fails", async () => {
+    await renderApp();
+    const input = await openRenameDialog();
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "rename_app") throw "Name is too long";
+      return makeState();
+    });
+    await userEvent.type(input, "x{Enter}");
+    expect(await screen.findByText(/Name is too long/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "名前を変更" })).toBeInTheDocument();
+  });
+
+  it("closes the dialog with Escape without renaming", async () => {
+    await renderApp();
+    await openRenameDialog();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("rename_app", expect.anything());
+  });
+});

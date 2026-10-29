@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { clampPage, pickAppPath } from "./lib/launcher";
 import { looksLikeUrl, pickShortcutFile } from "./lib/link";
 import { tooltipPosition } from "./lib/tooltip";
+import { contextMenuPosition } from "./lib/contextMenu";
 import { AppIcon } from "./components/AppIcon";
 
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
@@ -13,6 +14,10 @@ type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
 type Settings = { always_on_top: boolean };
 
 type TipState = { name: string; x: number; y: number };
+type MenuState = { slot: number; x: number; y: number };
+
+/** 右クリックメニューの大きさ (px)。App.css の .context-menu と合わせる。 */
+const CONTEXT_MENU_SIZE = { width: 150, height: 36 };
 
 /** マウスの近くに出るアプリ名の吹き出し。 */
 function Tooltip({ name, x, y }: TipState) {
@@ -32,9 +37,18 @@ function Chevron({ direction }: { direction: "left" | "right" }) {
   );
 }
 
-/** 空きスロットから URL ショートカットを登録する小さなダイアログ。成功したら親が閉じる。 */
-function UrlDialog({ onSubmit, onClose }: { onSubmit: (input: string) => Promise<void>; onClose: () => void }) {
-  const [value, setValue] = useState("");
+type TextDialogProps = {
+  title: string;
+  inputLabel: string;
+  placeholder?: string;
+  initialValue?: string;
+  onSubmit: (input: string) => Promise<void>;
+  onClose: () => void;
+};
+
+/** 1 行だけ入力して Enter で確定する小さなダイアログ (URL の登録、名前の変更)。成功したら親が閉じる。 */
+function TextDialog({ title, inputLabel, placeholder, initialValue = "", onSubmit, onClose }: TextDialogProps) {
+  const [value, setValue] = useState(initialValue);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,18 +68,36 @@ function UrlDialog({ onSubmit, onClose }: { onSubmit: (input: string) => Promise
 
   return (
     <div className="backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <form role="dialog" aria-label="Add URL shortcut" className="dialog" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <form role="dialog" aria-label={title} className="dialog" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
         <input
           type="text"
-          aria-label="URL"
-          placeholder="https://example.com"
+          aria-label={inputLabel}
+          placeholder={placeholder}
           autoFocus
+          onFocus={(e) => e.target.select()}
           value={value}
           disabled={busy}
           onChange={(e) => setValue(e.target.value)}
         />
         {error && <p className="dialog-error">{error}</p>}
       </form>
+    </div>
+  );
+}
+
+/** 登録済みアイテムの右クリックメニュー。メニューの外をクリックするか Escape で閉じる。 */
+function ContextMenu({ x, y, onRename, onClose }: { x: number; y: number; onRename: () => void; onClose: () => void }) {
+  const { left, top } = contextMenuPosition(x, y, window.innerWidth, window.innerHeight, CONTEXT_MENU_SIZE);
+  return (
+    <div
+      className="context-menu-layer"
+      onClick={onClose}
+      onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+    >
+      <div role="menu" className="context-menu" style={{ left, top }} onClick={(e) => e.stopPropagation()}>
+        <button type="button" role="menuitem" autoFocus onClick={onRename}>名前を変更…</button>
+      </div>
     </div>
   );
 }
@@ -122,6 +154,8 @@ export default function App() {
   const [tip, setTip] = useState<TipState | null>(null);
   const [dialogSlot, setDialogSlot] = useState<number | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [renameSlot, setRenameSlot] = useState<number | null>(null);
 
   /** 登録系の操作を実行し、失敗したら理由を表示する。どちらの場合も最新の状態を読み直す。 */
   async function register(action: () => Promise<unknown>) {
@@ -184,6 +218,12 @@ export default function App() {
     setDialogSlot(null);
   }
 
+  async function submitRename(slotIdx: number, name: string) {
+    await invoke("rename_app", { pageIdx: currentPage, slotIdx, name });
+    await fetchState();
+    setRenameSlot(null);
+  }
+
   if (!state) return <div>Loading...</div>;
 
   const currentSlots = state.pages[currentPage];
@@ -202,6 +242,7 @@ export default function App() {
               onClick={() => (app ? handleLaunch(app) : setDialogSlot(i))}
               onMouseMove={app ? (e) => setTip({ name: app.name, x: e.clientX, y: e.clientY }) : undefined}
               onMouseLeave={app ? () => setTip(null) : undefined}
+              onContextMenu={app ? (e) => { e.preventDefault(); setTip(null); setMenu({ slot: i, x: e.clientX, y: e.clientY }); } : undefined}
             >
               {app ? <AppIcon key={app.path} path={app.path} name={app.name} kind={app.kind} icon={app.icon} /> : <div className="slot-number">{i + 1}</div>}
             </div>
@@ -215,7 +256,32 @@ export default function App() {
         <span>{currentPage + 1} / {state.max_pages}</span>
         <button aria-label="Next page" onClick={() => setCurrentPage(p => clampPage(p + 1, state.max_pages))} disabled={currentPage >= state.max_pages - 1}><Chevron direction="right" /></button>
       </div>
-      {dialogSlot !== null && <UrlDialog onSubmit={(input) => submitUrl(dialogSlot, input)} onClose={() => setDialogSlot(null)} />}
+      {dialogSlot !== null && (
+        <TextDialog
+          title="Add URL shortcut"
+          inputLabel="URL"
+          placeholder="https://example.com"
+          onSubmit={(input) => submitUrl(dialogSlot, input)}
+          onClose={() => setDialogSlot(null)}
+        />
+      )}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onRename={() => { setRenameSlot(menu.slot); setMenu(null); }}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {renameSlot !== null && (
+        <TextDialog
+          title="名前を変更"
+          inputLabel="名前"
+          initialValue={currentSlots[renameSlot]?.name}
+          onSubmit={(name) => submitRename(renameSlot, name)}
+          onClose={() => setRenameSlot(null)}
+        />
+      )}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );

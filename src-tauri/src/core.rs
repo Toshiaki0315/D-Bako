@@ -21,6 +21,8 @@ impl AppItem {
         Self { path: url.into(), name: name.into(), kind: ItemKind::Url, icon }
     }
 }
+/// 表示名の最大文字数。吹き出しに収まらない長さは省略表示になる。
+pub const MAX_NAME_CHARS: usize = 100;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LauncherState { pub pages: Vec<Vec<Option<AppItem>>>, pub max_pages: usize }
 impl LauncherState {
@@ -73,6 +75,16 @@ impl LauncherState {
         let src = self.pages[from.0][from.1].take();
         let dst = std::mem::replace(&mut self.pages[to.0][to.1], src);
         self.pages[from.0][from.1] = dst;
+        Ok(())
+    }
+    /// 指定スロットのアイテムの表示名を変える。前後の空白は除き、空や長すぎる名前は拒否する。
+    pub fn rename_app(&mut self, page_idx: usize, slot_idx: usize, name: &str) -> Result<(), String> {
+        self.check_pos(page_idx, slot_idx)?;
+        let name = name.trim();
+        if name.is_empty() { return Err("Name is empty".to_string()); }
+        if name.chars().count() > MAX_NAME_CHARS { return Err("Name is too long".to_string()); }
+        let item = self.pages[page_idx][slot_idx].as_mut().ok_or_else(|| "Slot is empty".to_string())?;
+        item.name = name.to_string();
         Ok(())
     }
     pub fn add_app_to_first_empty(&mut self, page_idx: usize, app: AppItem) -> Result<(), String> {
@@ -167,6 +179,37 @@ mod tests {
     #[test] fn test_remove_app_rejects_invalid_page() { let mut s = LauncherState::new(1); assert_eq!(s.remove_app(1, 0), Err("Invalid page index".to_string())); }
     #[test] fn test_remove_app_rejects_invalid_slot() { let mut s = LauncherState::new(1); assert_eq!(s.remove_app(0, 8), Err("Invalid slot index".to_string())); }
     #[test] fn test_remove_app_rejects_empty_slot() { let mut s = LauncherState::new(1); assert_eq!(s.remove_app(0, 0), Err("Slot is empty".to_string())); }
+    #[test] fn test_rename_app_changes_only_the_name() {
+        let mut s = LauncherState::new(1);
+        let it = AppItem::url("https://calendar.google.com/", "calendar.google.com", Some("data:icon".into()));
+        s.add_app(0, 2, it.clone()).unwrap();
+        s.rename_app(0, 2, "Googleカレンダー").unwrap();
+        assert_eq!(s.pages[0][2], Some(AppItem { name: "Googleカレンダー".into(), ..it }));
+    }
+    #[test] fn test_rename_app_trims_surrounding_whitespace() {
+        let mut s = LauncherState::new(1);
+        s.add_app(0, 0, item("A")).unwrap();
+        s.rename_app(0, 0, "  新しい名前 \n").unwrap();
+        assert_eq!(s.pages[0][0].as_ref().unwrap().name, "新しい名前");
+    }
+    #[test] fn test_rename_app_rejects_a_blank_name() {
+        let mut s = LauncherState::new(1);
+        s.add_app(0, 0, item("A")).unwrap();
+        assert_eq!(s.rename_app(0, 0, "   "), Err("Name is empty".to_string()));
+        assert_eq!(s.pages[0][0], Some(item("A")));
+    }
+    #[test] fn test_rename_app_rejects_a_too_long_name() {
+        let mut s = LauncherState::new(1);
+        s.add_app(0, 0, item("A")).unwrap();
+        assert!(s.rename_app(0, 0, &"あ".repeat(MAX_NAME_CHARS)).is_ok());
+        assert_eq!(s.rename_app(0, 0, &"あ".repeat(MAX_NAME_CHARS + 1)), Err("Name is too long".to_string()));
+    }
+    #[test] fn test_rename_app_rejects_an_empty_slot_or_invalid_position() {
+        let mut s = LauncherState::new(1);
+        assert_eq!(s.rename_app(0, 0, "A"), Err("Slot is empty".to_string()));
+        assert_eq!(s.rename_app(1, 0, "A"), Err("Invalid page index".to_string()));
+        assert_eq!(s.rename_app(0, 8, "A"), Err("Invalid slot index".to_string()));
+    }
     #[test] fn test_move_app_to_empty_slot_across_pages() {
         let mut s = LauncherState::new(2);
         s.add_app(0, 0, item("A")).unwrap();

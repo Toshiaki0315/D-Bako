@@ -75,6 +75,11 @@ async fn add_url_file_to_first_empty(page_idx: usize, path: String, state: State
 }
 
 #[tauri::command]
+fn rename_app(page_idx: usize, slot_idx: usize, name: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.launcher.lock().unwrap().rename_app(page_idx, slot_idx, &name)
+}
+
+#[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Settings { state.settings.lock().unwrap().settings().clone() }
 
 /// 保存できてからウィンドウに反映する (次回起動時の状態と食い違わないように)。
@@ -162,7 +167,8 @@ pub fn run() {
             launch_app,
             get_app_icon,
             get_settings,
-            set_always_on_top
+            set_always_on_top,
+            rename_app
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
