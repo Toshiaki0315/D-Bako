@@ -10,9 +10,10 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
+// Tauri v2 がファイルのドロップを知らせるイベント名。これ以外の名前を listen しても届かない。
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (_name: string, handler: typeof dropHandler) => {
-    dropHandler = handler;
+  listen: vi.fn(async (name: string, handler: typeof dropHandler) => {
+    if (name === "tauri://drag-drop") dropHandler = handler;
     return unlistenMock;
   }),
 }));

@@ -123,7 +123,8 @@ export default function App() {
   useEffect(() => {
     fetchState();
 
-    const unlisten = listen('tauri://drop', async (event: any) => {
+    // Tauri v2 のファイルドロップは "tauri://drag-drop" で届く (旧名 "tauri://drop" では届かない)
+    const unlisten = listen('tauri://drag-drop', async (event: any) => {
       const paths: string[] = event.payload.paths ?? [];
       const appPath = pickAppPath(paths);
       const shortcut = pickShortcutFile(paths);
