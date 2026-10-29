@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampPage, pickAppPath } from "./launcher";
+import { pickAppPath, wrapPage } from "./launcher";
 
 describe("pickAppPath", () => {
   it("returns null for an empty list", () => {
@@ -17,16 +17,21 @@ describe("pickAppPath", () => {
   });
 });
 
-describe("clampPage", () => {
+describe("wrapPage", () => {
   it("keeps a page within range", () => {
-    expect(clampPage(2, 5)).toBe(2);
+    expect(wrapPage(2, 5)).toBe(2);
   });
 
-  it("clamps below zero to 0", () => {
-    expect(clampPage(-1, 5)).toBe(0);
+  it("goes from the first page back to the last", () => {
+    expect(wrapPage(-1, 10)).toBe(9);
   });
 
-  it("clamps beyond the last page to maxPages - 1", () => {
-    expect(clampPage(9, 5)).toBe(4);
+  it("goes from the last page on to the first", () => {
+    expect(wrapPage(10, 10)).toBe(0);
+  });
+
+  it("stays on the only page", () => {
+    expect(wrapPage(1, 1)).toBe(0);
+    expect(wrapPage(-1, 1)).toBe(0);
   });
 });

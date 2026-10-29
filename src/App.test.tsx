@@ -156,20 +156,30 @@ describe("App", () => {
     expect(invokeMock).not.toHaveBeenCalledWith("launch_app", expect.anything());
   });
 
-  it("navigates between pages and disables buttons at the bounds", async () => {
+  it("navigates between pages and wraps around at both ends", async () => {
     await renderApp();
     const prev = screen.getByRole("button", { name: "Previous page" });
     const next = screen.getByRole("button", { name: "Next page" });
-    expect(prev).toBeDisabled();
+    expect(prev).toBeEnabled();
 
     await userEvent.click(next);
     expect(screen.getByText("2 / 3")).toBeInTheDocument();
     await userEvent.click(next);
     expect(screen.getByText("3 / 3")).toBeInTheDocument();
-    expect(next).toBeDisabled();
+    expect(next).toBeEnabled();
+    await userEvent.click(next);
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
 
     await userEvent.click(prev);
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    await userEvent.click(prev);
     expect(screen.getByText("2 / 3")).toBeInTheDocument();
+  });
+
+  it("disables both buttons when there is only one page", async () => {
+    await renderApp(makeState(1, { "0:0": foo }));
+    expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
   });
 
   it("registers a dropped .app on the current page and refreshes state", async () => {

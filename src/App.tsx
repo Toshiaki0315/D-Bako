@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { clampPage, pickAppPath } from "./lib/launcher";
+import { pickAppPath, wrapPage } from "./lib/launcher";
 import { looksLikeUrl, pickShortcutFile } from "./lib/link";
 import { tooltipPosition } from "./lib/tooltip";
 import { contextMenuPosition } from "./lib/contextMenu";
@@ -274,9 +274,9 @@ export default function App() {
       )}
       {error && <p role="alert" className="error">{error}</p>}
       <div className="pager">
-        <button aria-label="Previous page" onClick={() => setCurrentPage(p => clampPage(p - 1, state.max_pages))} disabled={currentPage === 0}><Chevron direction="left" /></button>
+        <button aria-label="Previous page" onClick={() => setCurrentPage(p => wrapPage(p - 1, state.max_pages))} disabled={state.max_pages <= 1}><Chevron direction="left" /></button>
         <span>{currentPage + 1} / {state.max_pages}</span>
-        <button aria-label="Next page" onClick={() => setCurrentPage(p => clampPage(p + 1, state.max_pages))} disabled={currentPage >= state.max_pages - 1}><Chevron direction="right" /></button>
+        <button aria-label="Next page" onClick={() => setCurrentPage(p => wrapPage(p + 1, state.max_pages))} disabled={state.max_pages <= 1}><Chevron direction="right" /></button>
       </div>
       {dialogSlot !== null && (
         <TextDialog
