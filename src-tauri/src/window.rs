@@ -62,6 +62,13 @@ pub fn resize_for_layout(current_width: f64, from: (usize, usize), to: (usize, u
     fit(base_size(to.0, to.1).0 * scale, to.0, to.1, screen)
 }
 
+/// `size` (幅, 高さ) のウィンドウを、領域 (`origin`: 左上, `area`: 幅, 高さ) の中央に置く左上の位置。
+/// 領域より大きければ左上に揃え、はみ出しは右下にする。単位はどれも物理ピクセル。
+pub fn center_in(origin: (i32, i32), area: (u32, u32), size: (u32, u32)) -> (i32, i32) {
+    let offset = |a: u32, s: u32| (a.saturating_sub(s) / 2) as i32;
+    (origin.0 + offset(area.0, size.0), origin.1 + offset(area.1, size.1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +180,21 @@ mod tests {
     #[test]
     fn resize_for_layout_falls_back_to_the_base_size_for_an_invalid_width() {
         assert_eq!(resize_for_layout(f64::NAN, (4, 2), (3, 3), SCREEN), base_size(3, 3));
+    }
+
+    #[test]
+    fn center_in_places_the_window_in_the_middle_of_the_area() {
+        assert_eq!(center_in((0, 0), (1000, 800), (400, 200)), (300, 300));
+    }
+
+    #[test]
+    fn center_in_works_on_a_display_with_negative_coordinates() {
+        // メイン画面の左上にある外部ディスプレイ
+        assert_eq!(center_in((-657, -1692), (3008, 1692), (720, 376)), (-657 + 1144, -1692 + 658));
+    }
+
+    #[test]
+    fn center_in_aligns_a_window_larger_than_the_area_to_its_top_left() {
+        assert_eq!(center_in((10, 20), (300, 100), (400, 200)), (10, 20));
     }
 }

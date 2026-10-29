@@ -1,7 +1,7 @@
 //! メニューバー (日本語表記)。Tauri 標準のメニューは英語固定なので、macOS の日本語表記に合わせて組み立てる。
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Manager, Runtime, Theme, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, PhysicalPosition, Runtime, Theme, WebviewUrl, WebviewWindowBuilder};
 
 /// 「設定…」のメニュー ID。
 pub const SETTINGS_ID: &str = "settings";
@@ -64,8 +64,10 @@ pub fn handle_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
 
 /// 設定ウィンドウを開く。既に開いていれば手前に出す。
 /// メインウィンドウの子にして、メインが「常に前に表示」でも設定ウィンドウが後ろに隠れないようにする。
+/// 子ウィンドウは親と別のディスプレイにあると表示されないので、メインウィンドウのあるディスプレイの中央に開く。
 fn open_settings<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(SETTINGS_WINDOW) { return window.set_focus(); }
+    let main = app.get_webview_window("main");
     let mut builder = WebviewWindowBuilder::new(app, SETTINGS_WINDOW, WebviewUrl::App("index.html?view=settings".into()))
         .title("設定")
         .inner_size(360.0, 160.0)
@@ -73,8 +75,16 @@ fn open_settings<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .minimizable(false)
         .maximizable(false)
         .theme(Some(Theme::Dark))
+        .visible(false)
         .center();
-    if let Some(main) = app.get_webview_window("main") { builder = builder.parent(&main)?; }
-    builder.build()?;
-    Ok(())
+    if let Some(main) = &main { builder = builder.parent(main)?; }
+    let window = builder.build()?;
+    if let Some(monitor) = main.as_ref().map(|m| m.current_monitor()).transpose()?.flatten() {
+        let area = monitor.work_area();
+        let size = window.outer_size()?;
+        let (x, y) = crate::window::center_in((area.position.x, area.position.y), (area.size.width, area.size.height), (size.width, size.height));
+        window.set_position(PhysicalPosition::new(x, y))?;
+    }
+    window.show()?;
+    window.set_focus()
 }
