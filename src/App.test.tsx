@@ -582,7 +582,9 @@ describe("App drag and drop", () => {
     await dragItem(slot(0), { x: 50, y: 300 });
     document.elementFromPoint = vi.fn(() => document.body);
     await dragItem(slot(0), { x: 900, y: 300 });
-    expect(invokeMock).not.toHaveBeenCalled();
+    for (const cmd of ["move_app", "remove_app", "launch_app"]) {
+      expect(invokeMock).not.toHaveBeenCalledWith(cmd, expect.anything());
+    }
   });
 
   it("still launches the item on a click that barely moves", async () => {

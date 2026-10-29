@@ -149,6 +149,11 @@ async fn get_app_icon(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+fn get_app_icon_stamp(path: String) -> Result<String, String> {
+    icon::icon_stamp(std::path::Path::new(&path))
+}
+
 /// 覚えておいた設定 (ウィンドウ幅など) を保存する。終了処理の途中なので、失敗しても止めない。
 fn flush_settings<R: tauri::Runtime>(app: &impl Manager<R>) {
     if let Some(state) = app.try_state::<AppState>() {
@@ -219,6 +224,7 @@ pub fn run() {
             add_url_file_to_first_empty,
             launch_app,
             get_app_icon,
+            get_app_icon_stamp,
             get_settings,
             set_always_on_top,
             set_launch_at_login,

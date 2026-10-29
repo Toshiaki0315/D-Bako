@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { initialOf, letterColor } from "../lib/link";
 
-const iconCache = new Map<string, string>();
+/** 取り出したアイコン画像と、そのときのアイコンファイルの目印 (パスごと)。 */
+const iconCache = new Map<string, { stamp: string; src: string }>();
 
 export function clearIconCache() {
   iconCache.clear();
@@ -16,27 +17,33 @@ type Props = { path: string; name: string; kind?: "app" | "url"; icon?: string |
  * - URL ショートカット: 登録時に取得した favicon。無い・読めない場合は頭文字のタイルで代替する。
  */
 export function AppIcon({ path, name, kind = "app", icon }: Props) {
-  const [src, setSrc] = useState<string | null>(iconCache.get(path) ?? null);
+  const [src, setSrc] = useState<string | null>(iconCache.get(path)?.src ?? null);
   const [iconFailed, setIconFailed] = useState(false);
 
+  // 覚えた画像があればすぐに出し、アイコンファイルの目印が変わっていたときだけ取り出し直す。
+  // アプリのアップデートは道具箱が裏にいる間に起きるので、ウィンドウが前面に来るたびに確かめる。
   useEffect(() => {
     if (kind === "url") return;
-    const cached = iconCache.get(path);
-    if (cached) {
-      setSrc(cached);
-      return;
-    }
-    setSrc(null);
+    setSrc(iconCache.get(path)?.src ?? null);
     let stale = false;
-    invoke<string>("get_app_icon", { path })
-      .then((dataUrl) => {
-        if (stale || typeof dataUrl !== "string") return;
-        iconCache.set(path, dataUrl);
-        setSrc(dataUrl);
-      })
-      .catch(() => {});
+    const refresh = async () => {
+      try {
+        const stamp = await invoke<string>("get_app_icon_stamp", { path });
+        const cached = iconCache.get(path);
+        if (cached && cached.stamp === stamp) return;
+        const dataUrl = await invoke<string>("get_app_icon", { path });
+        if (typeof dataUrl !== "string") return;
+        iconCache.set(path, { stamp, src: dataUrl });
+        if (!stale) setSrc(dataUrl);
+      } catch {
+        // 確かめられなければ今の表示のままにする
+      }
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
     return () => {
       stale = true;
+      window.removeEventListener("focus", refresh);
     };
   }, [path, kind]);
 

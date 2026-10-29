@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -11,6 +11,19 @@ import { AppIcon, clearIconCache } from "./AppIcon";
 const URL_A = "data:image/png;base64,AAAA";
 const URL_B = "data:image/png;base64,BBBB";
 
+/** バックエンドが返すアイコンの目印と画像 (パスごと)。テストの途中で書き換えるとアプリの更新を表す。 */
+let icons: Record<string, { stamp: string; url: string }>;
+
+function mockIcons(initial: typeof icons) {
+  icons = initial;
+  invokeMock.mockImplementation(async (cmd: string, { path }: { path: string }) => {
+    if (cmd === "get_app_icon_stamp") return icons[path].stamp;
+    if (cmd === "get_app_icon") return icons[path].url;
+  });
+}
+
+const extractCalls = () => invokeMock.mock.calls.filter(([cmd]) => cmd === "get_app_icon").length;
+
 beforeEach(() => {
   invokeMock.mockReset();
   clearIconCache();
@@ -18,7 +31,7 @@ beforeEach(() => {
 
 describe("AppIcon", () => {
   it("shows the fallback first, then the extracted icon image", async () => {
-    invokeMock.mockResolvedValue(URL_A);
+    mockIcons({ "/Applications/Foo.app": { stamp: "s1", url: URL_A } });
     render(<AppIcon path="/Applications/Foo.app" name="Foo" />);
     expect(screen.getByText("📱")).toBeInTheDocument();
 
@@ -68,30 +81,84 @@ describe("AppIcon", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
-  it("reuses a cached icon instead of invoking again", async () => {
-    invokeMock.mockResolvedValue(URL_A);
+  it("reuses a cached icon while the icon file is unchanged", async () => {
+    mockIcons({ "/Foo.app": { stamp: "s1", url: URL_A } });
     const first = render(<AppIcon path="/Foo.app" name="Foo" />);
     await first.findByRole("img");
     first.unmount();
 
     render(<AppIcon path="/Foo.app" name="Foo" />);
     expect(screen.getByRole("img", { name: "Foo" })).toHaveAttribute("src", URL_A);
-    expect(invokeMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(3)); // 目印 → 画像 → 目印
+    expect(extractCalls()).toBe(1);
+  });
+
+  it("extracts again when the item is registered again after the app's icon changed", async () => {
+    mockIcons({ "/Foo.app": { stamp: "s1", url: URL_A } });
+    const first = render(<AppIcon path="/Foo.app" name="Foo" />);
+    await first.findByRole("img");
+    first.unmount();
+
+    icons["/Foo.app"] = { stamp: "s2", url: URL_B };
+    render(<AppIcon path="/Foo.app" name="Foo" />);
+    await waitFor(() => expect(screen.getByRole("img", { name: "Foo" })).toHaveAttribute("src", URL_B));
+    expect(extractCalls()).toBe(2);
+  });
+
+  it("rechecks when the window gets focus and shows the updated icon", async () => {
+    mockIcons({ "/Foo.app": { stamp: "s1", url: URL_A } });
+    render(<AppIcon path="/Foo.app" name="Foo" />);
+    await screen.findByRole("img", { name: "Foo" });
+
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(extractCalls()).toBe(1); // 変わっていなければ取り出さない
+
+    icons["/Foo.app"] = { stamp: "s2", url: URL_B };
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(screen.getByRole("img", { name: "Foo" })).toHaveAttribute("src", URL_B));
+  });
+
+  it("keeps showing the current icon when a recheck fails", async () => {
+    mockIcons({ "/Foo.app": { stamp: "s1", url: URL_A } });
+    render(<AppIcon path="/Foo.app" name="Foo" />);
+    await screen.findByRole("img", { name: "Foo" });
+
+    invokeMock.mockRejectedValue("Icon file not found");
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(screen.getByRole("img", { name: "Foo" })).toHaveAttribute("src", URL_A);
+  });
+
+  it("stops rechecking after unmount", async () => {
+    mockIcons({ "/Foo.app": { stamp: "s1", url: URL_A } });
+    const { unmount } = render(<AppIcon path="/Foo.app" name="Foo" />);
+    await screen.findByRole("img", { name: "Foo" });
+    unmount();
+    invokeMock.mockClear();
+    window.dispatchEvent(new Event("focus"));
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
   it("ignores a stale result after the path changes", async () => {
     let resolveA!: (v: string) => void;
-    invokeMock.mockImplementation((_cmd: string, { path }: { path: string }) =>
-      path === "/A.app"
-        ? new Promise<string>((r) => (resolveA = r))
-        : Promise.resolve(URL_B),
-    );
+    invokeMock.mockImplementation((cmd: string, { path }: { path: string }) => {
+      if (cmd === "get_app_icon_stamp") return Promise.resolve(`stamp:${path}`);
+      return path === "/A.app" ? new Promise<string>((r) => (resolveA = r)) : Promise.resolve(URL_B);
+    });
     const { rerender } = render(<AppIcon path="/A.app" name="A" />);
+    await waitFor(() => expect(resolveA).toBeDefined());
     rerender(<AppIcon path="/B.app" name="B" />);
     expect(await screen.findByRole("img", { name: "B" })).toHaveAttribute("src", URL_B);
 
     resolveA(URL_A);
     await Promise.resolve();
     expect(screen.getByRole("img", { name: "B" })).toHaveAttribute("src", URL_B);
+  });
+});
+
+describe("AppIcon without a cached icon", () => {
+  it("extracts even when the stamp cannot be read as a string", async () => {
+    invokeMock.mockImplementation(async (cmd: string) => (cmd === "get_app_icon" ? URL_A : undefined));
+    render(<AppIcon path="/Foo.app" name="Foo" />);
+    expect(await screen.findByRole("img", { name: "Foo" })).toHaveAttribute("src", URL_A);
   });
 });

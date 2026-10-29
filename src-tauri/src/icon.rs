@@ -20,6 +20,15 @@ pub fn find_icon_path(app_path: &Path) -> Result<PathBuf, String> {
     if icon_path.is_file() { Ok(icon_path) } else { Err(format!("Icon file not found: {}", icon_path.display())) }
 }
 
+/// アイコンファイルが変わったかを見分ける目印 (パス・inode・サイズ・更新時刻)。
+/// 画像を取り出すより十分に軽いので、画面側はこれが変わったときだけ取り出し直す。
+pub fn icon_stamp(app_path: &Path) -> Result<String, String> {
+    use std::os::unix::fs::MetadataExt;
+    let icon_path = find_icon_path(app_path)?;
+    let meta = std::fs::metadata(&icon_path).map_err(|e| e.to_string())?;
+    Ok(format!("{}|{}|{}|{}.{}", icon_path.display(), meta.ino(), meta.len(), meta.mtime(), meta.mtime_nsec()))
+}
+
 /// PNG バイト列を `<img src>` にそのまま使える data URL にする。
 pub fn to_data_url(png: &[u8]) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
@@ -139,6 +148,42 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_bundle(dir.path(), Some(plist_with(Some("AppIcon"))), Some(("AppIcon.icns", b"garbage".to_vec())));
         assert!(extract_icon_png(&app).is_err());
+    }
+
+    #[test]
+    fn stamp_stays_the_same_while_the_icon_file_is_unchanged() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_bundle(dir.path(), Some(plist_with(Some("AppIcon"))), Some(("AppIcon.icns", icns_bytes(&[16]))));
+        assert_eq!(icon_stamp(&app).unwrap(), icon_stamp(&app).unwrap());
+    }
+
+    #[test]
+    fn stamp_changes_when_the_app_is_updated_with_a_new_icon_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_bundle(dir.path(), Some(plist_with(Some("AppIcon"))), Some(("AppIcon.icns", icns_bytes(&[16]))));
+        let before = icon_stamp(&app).unwrap();
+        // アップデートはファイルを置き換える (別の inode・内容・時刻になる)
+        let icns = app.join("Contents/Resources/AppIcon.icns");
+        fs::remove_file(&icns).unwrap();
+        fs::write(&icns, icns_bytes(&[16, 32])).unwrap();
+        assert_ne!(icon_stamp(&app).unwrap(), before);
+    }
+
+    #[test]
+    fn stamp_changes_when_the_plist_points_to_another_icon_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_bundle(dir.path(), Some(plist_with(Some("AppIcon"))), Some(("AppIcon.icns", icns_bytes(&[16]))));
+        let before = icon_stamp(&app).unwrap();
+        fs::write(app.join("Contents/Resources/NewIcon.icns"), icns_bytes(&[16])).unwrap();
+        fs::write(app.join("Contents/Info.plist"), plist_with(Some("NewIcon"))).unwrap();
+        assert_ne!(icon_stamp(&app).unwrap(), before);
+    }
+
+    #[test]
+    fn stamp_errors_when_the_icon_file_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = make_bundle(dir.path(), Some(plist_with(Some("Nope"))), None);
+        assert!(icon_stamp(&app).unwrap_err().contains("Icon file not found"));
     }
 
     #[test]
