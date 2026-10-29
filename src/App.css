@@ -19,6 +19,12 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 .slot.filled .app-icon { position: absolute; left: -12.5%; top: -12.5%; width: 125%; height: 125%; max-height: none; transition: transform 0.15s; }
 .slot.filled:hover .app-icon { transform: scale(1.06); }
 .slot-number { color: #555; font-size: 1rem; }
+.slot.dragging .app-icon { opacity: 0.3; }
+.slot.drop-target, .slot.filled.drop-target { border-color: #4a90e2; background-color: rgba(74, 144, 226, 0.15); }
+/* ドラッグ中にポインタへ付いてくるアイコン。下のスロットを判定できるよう、ポインタイベントは素通しする */
+.drag-ghost { position: fixed; z-index: 30; width: 64px; height: 64px; transform: translate(-50%, -50%); pointer-events: none; opacity: 0.85; }
+.drag-ghost .app-icon { width: 100%; height: 100%; }
+.drag-ghost .app-icon-letter, .drag-ghost .app-icon-fallback { font-size: 1.75rem; }
 .app-icon { width: 100%; height: auto; max-height: 100%; aspect-ratio: 1; object-fit: contain; }
 .app-icon-fallback { display: flex; align-items: center; justify-content: center; font-size: 3.5rem; }
 /* アプリ名: マウス位置に追従する吹き出し (座標は App.tsx から指定)。

@@ -87,6 +87,17 @@ impl LauncherState {
         item.name = name.to_string();
         Ok(())
     }
+    /// 指定スロットに差し込む。埋まっていれば、そこから同じページの次の空きまでを 1 つずつ後ろへずらす。
+    pub fn insert_app(&mut self, page_idx: usize, slot_idx: usize, app: AppItem) -> Result<(), String> {
+        self.check_pos(page_idx, slot_idx)?;
+        let page = &mut self.pages[page_idx];
+        let empty = page[slot_idx..].iter().position(|s| s.is_none())
+            .ok_or_else(|| "No empty slot after this position".to_string())?;
+        // 空きを先頭へ回してから埋める
+        page[slot_idx..=slot_idx + empty].rotate_right(1);
+        page[slot_idx] = Some(app);
+        Ok(())
+    }
     pub fn add_app_to_first_empty(&mut self, page_idx: usize, app: AppItem) -> Result<(), String> {
         if page_idx >= self.max_pages { return Err("Invalid page index".to_string()); }
         if let Some(slot) = self.pages[page_idx].iter_mut().find(|s| s.is_none()) {
@@ -248,5 +259,30 @@ mod tests {
         let mut s = LauncherState::new(1);
         for i in 0..8 { s.add_app_to_first_empty(0, item(&i.to_string())).unwrap(); }
         assert_eq!(s.add_app_to_first_empty(0, item("X")), Err("No empty slot on this page".to_string()));
+    }
+    #[test] fn test_insert_app_into_an_empty_slot_places_it_there() {
+        let mut s = LauncherState::new(1);
+        s.insert_app(0, 3, item("A")).unwrap();
+        assert_eq!(s.pages[0][3], Some(item("A")));
+    }
+    #[test] fn test_insert_app_shifts_items_up_to_the_next_empty_slot() {
+        let mut s = LauncherState::new(1);
+        for (i, n) in ["A", "B", "C"].iter().enumerate() { s.add_app(0, i + 1, item(n)).unwrap(); }
+        s.add_app(0, 6, item("Z")).unwrap();
+        s.insert_app(0, 1, item("X")).unwrap();
+        let names: Vec<_> = s.pages[0].iter().map(|x| x.as_ref().map(|a| a.name.as_str())).collect();
+        assert_eq!(names, [None, Some("X"), Some("A"), Some("B"), Some("C"), None, Some("Z"), None]);
+    }
+    #[test] fn test_insert_app_rejects_when_no_empty_slot_follows_without_changing_anything() {
+        let mut s = LauncherState::new(1);
+        for i in 1..8 { s.add_app(0, i, item(&i.to_string())).unwrap(); }
+        let before = s.pages.clone();
+        assert_eq!(s.insert_app(0, 2, item("X")), Err("No empty slot after this position".to_string()));
+        assert_eq!(s.pages, before);
+    }
+    #[test] fn test_insert_app_rejects_an_invalid_position() {
+        let mut s = LauncherState::new(1);
+        assert_eq!(s.insert_app(1, 0, item("X")), Err("Invalid page index".to_string()));
+        assert_eq!(s.insert_app(0, 8, item("X")), Err("Invalid slot index".to_string()));
     }
 }

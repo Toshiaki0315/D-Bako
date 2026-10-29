@@ -47,6 +47,16 @@ impl<F: FileSystem> LauncherService<F> {
     pub fn remove_app(&mut self, page_idx: usize, slot_idx: usize) -> Result<(), String> {
         self.mutate(|s| s.remove_app(page_idx, slot_idx).map(|_| ()))
     }
+
+    /// 同じページ内で移動する。移動先が埋まっていれば入れ替える。
+    pub fn move_app(&mut self, page_idx: usize, from_slot: usize, to_slot: usize) -> Result<(), String> {
+        self.mutate(|s| s.move_app((page_idx, from_slot), (page_idx, to_slot)))
+    }
+
+    /// 指定スロットに差し込み、埋まっていれば後ろへずらす。
+    pub fn insert_app(&mut self, page_idx: usize, slot_idx: usize, app: AppItem) -> Result<(), String> {
+        self.mutate(|s| s.insert_app(page_idx, slot_idx, app))
+    }
 }
 
 #[cfg(test)]
@@ -170,6 +180,49 @@ mod tests {
 
         assert!(svc.remove_app(0, 1).unwrap_err().contains("write denied"));
         assert_eq!(svc.state().pages[0][1], Some(item("A")));
+    }
+
+    #[test]
+    fn move_app_swaps_and_persists() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 0, item("A")).unwrap();
+        svc.add_app_to_slot(0, 3, item("B")).unwrap();
+        svc.move_app(0, 0, 3).unwrap();
+
+        let saved = svc.store.load().unwrap();
+        assert_eq!((saved.pages[0][0].clone(), saved.pages[0][3].clone()), (Some(item("B")), Some(item("A"))));
+    }
+
+    #[test]
+    fn move_app_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 0, item("A")).unwrap();
+        svc.store.fs.fail_on.set(Some("write"));
+
+        assert!(svc.move_app(0, 0, 3).unwrap_err().contains("write denied"));
+        assert_eq!(svc.state().pages[0][0], Some(item("A")));
+        assert_eq!(svc.state().pages[0][3], None);
+    }
+
+    #[test]
+    fn insert_app_shifts_and_persists() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 0, item("A")).unwrap();
+        svc.insert_app(0, 0, item("X")).unwrap();
+
+        let saved = svc.store.load().unwrap();
+        assert_eq!((saved.pages[0][0].clone(), saved.pages[0][1].clone()), (Some(item("X")), Some(item("A"))));
+    }
+
+    #[test]
+    fn insert_app_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::default());
+        svc.add_app_to_slot(0, 0, item("A")).unwrap();
+        svc.store.fs.fail_on.set(Some("write"));
+
+        assert!(svc.insert_app(0, 0, item("X")).unwrap_err().contains("write denied"));
+        assert_eq!(svc.state().pages[0][0], Some(item("A")));
+        assert_eq!(svc.state().pages[0][1], None);
     }
 
     #[test]

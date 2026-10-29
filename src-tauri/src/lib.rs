@@ -22,11 +22,21 @@ struct AppState { launcher: Mutex<LauncherService<StdFs>>, settings: Mutex<Setti
 #[tauri::command]
 fn get_state(state: State<'_, AppState>) -> LauncherState { state.launcher.lock().unwrap().state().clone() }
 
+/// `.app` のパスからアイテムを作る。表示名は拡張子を除いたファイル名。
+fn app_item(path: String) -> AppItem {
+    let name = std::path::Path::new(&path).file_stem().unwrap_or_default().to_string_lossy().to_string();
+    AppItem::new(path, name)
+}
+
 #[tauri::command]
 fn add_app_to_first_empty(page_idx: usize, path: String, state: State<'_, AppState>) -> Result<(), String> {
-    let mut launcher = state.launcher.lock().unwrap();
-    let name = std::path::Path::new(&path).file_stem().unwrap_or_default().to_string_lossy().to_string();
-    launcher.add_app_to_first_empty(page_idx, AppItem::new(path, name))
+    state.launcher.lock().unwrap().add_app_to_first_empty(page_idx, app_item(path))
+}
+
+/// ドロップ位置のスロットに差し込む。埋まっていれば後ろへずらす。
+#[tauri::command]
+fn insert_app(page_idx: usize, slot_idx: usize, path: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.launcher.lock().unwrap().insert_app(page_idx, slot_idx, app_item(path))
 }
 
 #[tauri::command]
@@ -58,9 +68,8 @@ async fn add_url_to_slot(page_idx: usize, slot_idx: usize, input: String, state:
     state.launcher.lock().unwrap().add_app_to_slot(page_idx, slot_idx, item)
 }
 
-/// ドロップされた `.webloc` / `.url` を読み、中の URL を登録する。
-#[tauri::command]
-async fn add_url_file_to_first_empty(page_idx: usize, path: String, state: State<'_, AppState>) -> Result<(), String> {
+/// ドロップされた `.webloc` / `.url` を読み、中の URL のアイテムを作る。
+async fn url_file_item(path: String) -> Result<AppItem, String> {
     const MAX_SHORTCUT_BYTES: u64 = 1024 * 1024;
     let file = std::path::PathBuf::from(path);
     let read_path = file.clone();
@@ -71,8 +80,19 @@ async fn add_url_file_to_first_empty(page_idx: usize, path: String, state: State
     })
     .await
     .map_err(|e| e.to_string())??;
-    let item = build_url_item(link::shortcut_url(&file, &data)?).await?;
+    build_url_item(link::shortcut_url(&file, &data)?).await
+}
+
+#[tauri::command]
+async fn add_url_file_to_first_empty(page_idx: usize, path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let item = url_file_item(path).await?;
     state.launcher.lock().unwrap().add_app_to_first_empty(page_idx, item)
+}
+
+#[tauri::command]
+async fn insert_url_file(page_idx: usize, slot_idx: usize, path: String, state: State<'_, AppState>) -> Result<(), String> {
+    let item = url_file_item(path).await?;
+    state.launcher.lock().unwrap().insert_app(page_idx, slot_idx, item)
 }
 
 #[tauri::command]
@@ -83,6 +103,11 @@ fn rename_app(page_idx: usize, slot_idx: usize, name: String, state: State<'_, A
 #[tauri::command]
 fn remove_app(page_idx: usize, slot_idx: usize, state: State<'_, AppState>) -> Result<(), String> {
     state.launcher.lock().unwrap().remove_app(page_idx, slot_idx)
+}
+
+#[tauri::command]
+fn move_app(page_idx: usize, from_slot: usize, to_slot: usize, state: State<'_, AppState>) -> Result<(), String> {
+    state.launcher.lock().unwrap().move_app(page_idx, from_slot, to_slot)
 }
 
 /// 設定ウィンドウに見せる値。「起動時に実行する」は OS への登録状態そのものなので、保存せず毎回問い合わせる。
@@ -198,7 +223,10 @@ pub fn run() {
             set_always_on_top,
             set_launch_at_login,
             rename_app,
-            remove_app
+            remove_app,
+            move_app,
+            insert_app,
+            insert_url_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
