@@ -50,14 +50,18 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 .dialog input:disabled { opacity: 0.6; }
 .dialog-error { margin: 8px 0 0; color: #ff8a80; font-size: 12px; }
 /* 設定ウィンドウ (別ウィンドウ。固定サイズなので px で書く) */
-.settings-view { box-sizing: border-box; height: 100%; padding: 20px 24px; }
-.setting-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
-.setting-row + .setting-row { margin-top: 12px; }
-.setting-row input { margin: 0; accent-color: #4a90e2; }
-.settings-error { margin: 10px 0 0; color: #ff8a80; font-size: 12px; }
-.layout-row { display: flex; align-items: center; gap: 14px; margin-top: 18px; font-size: 13px; }
-.layout-row label { display: flex; align-items: center; gap: 6px; }
-.layout-row select { padding: 2px 4px; border: 1px solid #555; border-radius: 5px; background: #1e1e1e; color: #fff; font-size: 13px; }
+/* 設定ウィンドウ: macOS のシステム設定のように、見出し付きのグループに「ラベル (左) / 操作部品 (右)」の行を並べる。
+   ウィンドウの大きさは menu.rs の open_settings と合わせる */
+.settings-view { box-sizing: border-box; height: 100%; padding: 22px 24px; font-size: 14px; overflow-y: auto; }
+.settings-group { margin: 0; padding: 0; border: none; min-width: 0; }
+.settings-group + .settings-group { margin-top: 22px; }
+.settings-group legend { padding: 0 0 8px 4px; color: #a0a0a0; font-size: 13px; font-weight: 600; }
+.settings-box { border-radius: 10px; background: #2a2a2a; border: 1px solid #3a3a3a; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 0 14px; cursor: pointer; }
+.settings-row + .settings-row { border-top: 1px solid #3a3a3a; }
+.settings-row input { width: 16px; height: 16px; margin: 0; accent-color: #4a90e2; cursor: pointer; }
+.settings-row select { min-width: 72px; padding: 4px 8px; border: 1px solid #555; border-radius: 6px; background: #1e1e1e; color: #fff; font-size: 14px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.settings-error { margin: 12px 4px 0; color: #ff8a80; font-size: 13px; }
 /* 登録済みアイテムの右クリックメニュー: 文字が読めるよう固定サイズ (px)。寸法は App.tsx の CONTEXT_MENU_SIZE と合わせる */
 .context-menu-layer { position: fixed; inset: 0; z-index: 15; }
 .context-menu { position: fixed; box-sizing: border-box; width: 150px; padding: 4px; border-radius: 8px; background: #2f2f2f; border: 1px solid #444; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }

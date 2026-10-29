@@ -70,7 +70,7 @@ fn open_settings<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let main = app.get_webview_window("main");
     let mut builder = WebviewWindowBuilder::new(app, SETTINGS_WINDOW, WebviewUrl::App("index.html?view=settings".into()))
         .title("設定")
-        .inner_size(360.0, 160.0)
+        .inner_size(400.0, 380.0)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)

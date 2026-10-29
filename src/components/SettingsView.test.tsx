@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -138,9 +138,19 @@ describe("SettingsView layout", () => {
   it("shows the current grid size and page count", async () => {
     mockLayout({ cols: 4, rows: 2, pages: 10 });
     render(<SettingsView />);
-    expect(await screen.findByRole("combobox", { name: "横" })).toHaveValue("4");
-    expect(screen.getByRole("combobox", { name: "縦" })).toHaveValue("2");
-    expect(screen.getByRole("combobox", { name: "ページ" })).toHaveValue("10");
+    expect(await screen.findByRole("combobox", { name: "横の数" })).toHaveValue("4");
+    expect(screen.getByRole("combobox", { name: "縦の数" })).toHaveValue("2");
+    expect(screen.getByRole("combobox", { name: "ページ数" })).toHaveValue("10");
+  });
+
+  it("groups the general settings and the grid settings", async () => {
+    mockLayout({ cols: 4, rows: 2, pages: 10 });
+    render(<SettingsView />);
+    const general = await screen.findByRole("group", { name: "一般" });
+    expect(within(general).getByRole("checkbox", { name: "常に前に表示" })).toBeInTheDocument();
+    expect(within(general).getByRole("checkbox", { name: "起動時に実行する" })).toBeInTheDocument();
+    const grid = screen.getByRole("group", { name: "グリッド" });
+    expect(within(grid).getAllByRole("combobox")).toHaveLength(3);
   });
 
   it("offers 1-8 columns, 1-6 rows and 1-10 pages", async () => {
@@ -148,26 +158,26 @@ describe("SettingsView layout", () => {
     render(<SettingsView />);
     const values = (name: string) =>
       Array.from(screen.getByRole("combobox", { name }).querySelectorAll("option"), (o) => o.value);
-    await screen.findByRole("combobox", { name: "横" });
-    expect(values("横")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
-    expect(values("縦")).toEqual(["1", "2", "3", "4", "5", "6"]);
-    expect(values("ページ")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+    await screen.findByRole("combobox", { name: "横の数" });
+    expect(values("横の数")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
+    expect(values("縦の数")).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(values("ページ数")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
   });
 
   it("applies a new value right away", async () => {
     mockLayout({ cols: 4, rows: 2, pages: 10 });
     render(<SettingsView />);
-    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "横" }), "6");
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "横の数" }), "6");
     expect(invokeMock).toHaveBeenCalledWith("set_layout", { cols: 6, rows: 2, pages: 10 });
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "ページ" }), "3");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "ページ数" }), "3");
     expect(invokeMock).toHaveBeenCalledWith("set_layout", { cols: 6, rows: 2, pages: 3 });
-    expect(screen.getByRole("combobox", { name: "ページ" })).toHaveValue("3");
+    expect(screen.getByRole("combobox", { name: "ページ数" })).toHaveValue("3");
   });
 
   it("goes back and shows the reason when the items do not fit", async () => {
     mockLayout({ cols: 4, rows: 2, pages: 10 }, async () => { throw "Not enough slots for the registered items"; });
     render(<SettingsView />);
-    const rows = await screen.findByRole("combobox", { name: "縦" });
+    const rows = await screen.findByRole("combobox", { name: "縦の数" });
     await userEvent.selectOptions(rows, "1");
     expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: Not enough slots for the registered items");
     expect(rows).toHaveValue("2");
