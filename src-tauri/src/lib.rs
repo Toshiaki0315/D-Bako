@@ -82,11 +82,13 @@ fn rename_app(page_idx: usize, slot_idx: usize, name: String, state: State<'_, A
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Settings { state.settings.lock().unwrap().settings().clone() }
 
-/// 保存できてからウィンドウに反映する (次回起動時の状態と食い違わないように)。
+/// 保存できてからメインウィンドウに反映する (次回起動時の状態と食い違わないように)。
+/// 設定ウィンドウから呼ばれるので、呼び出し元ではなくメインウィンドウを対象にする。
 #[tauri::command]
-fn set_always_on_top(enabled: bool, window: tauri::WebviewWindow, state: State<'_, AppState>) -> Result<(), String> {
+fn set_always_on_top(enabled: bool, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     state.settings.lock().unwrap().set_always_on_top(enabled)?;
-    window.set_always_on_top(enabled).map_err(|e| e.to_string())
+    let main = app.get_webview_window("main").ok_or("main window not found")?;
+    main.set_always_on_top(enabled).map_err(|e| e.to_string())
 }
 
 /// アイコン抽出はファイル I/O を伴うため、UI/非同期ランタイムを塞がないよう別スレッドで実行する。
@@ -131,7 +133,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
+        // 覚えるのはメインウィンドウの大きさだけ (設定ウィンドウは対象外)
         .on_window_event(|window, event| match event {
+            _ if window.label() != "main" => {}
             // 最小化などで 0 になる場合は覚えない
             tauri::WindowEvent::Resized(size) if size.width > 0 => {
                 let scale = window.scale_factor().unwrap_or(1.0);

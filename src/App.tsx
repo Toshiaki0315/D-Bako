@@ -11,8 +11,6 @@ import { AppIcon } from "./components/AppIcon";
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
 type LauncherState = { pages: (AppItem | null)[][]; max_pages: number };
 
-type Settings = { always_on_top: boolean };
-
 type TipState = { name: string; x: number; y: number };
 type MenuState = { slot: number; x: number; y: number };
 
@@ -102,58 +100,12 @@ function ContextMenu({ x, y, onRename, onClose }: { x: number; y: number; onRena
   );
 }
 
-/** メニューバーの「設定…」から開く設定ダイアログ。変更はその場で反映・保存される。 */
-function SettingsDialog({ onClose }: { onClose: () => void }) {
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    invoke<Settings>("get_settings").then(setSettings);
-  }, []);
-
-  /** 先に見た目を切り替え、保存・反映に失敗したら元に戻す。 */
-  async function toggleAlwaysOnTop(enabled: boolean) {
-    setSettings({ always_on_top: enabled });
-    setError(null);
-    try {
-      await invoke("set_always_on_top", { enabled });
-    } catch (err) {
-      setSettings({ always_on_top: !enabled });
-      setError(String(err));
-    }
-  }
-
-  return (
-    <div className="backdrop" onClick={onClose} onKeyDown={(e) => e.key === "Escape" && onClose()}>
-      <div role="dialog" aria-label="設定" className="dialog settings" onClick={(e) => e.stopPropagation()}>
-        <h2 className="dialog-title">設定</h2>
-        {settings && (
-          <label className="setting-row">
-            <input
-              type="checkbox"
-              autoFocus
-              checked={settings.always_on_top}
-              onChange={(e) => toggleAlwaysOnTop(e.target.checked)}
-            />
-            常に前に表示
-          </label>
-        )}
-        {error && <p className="dialog-error">変更できません: {error}</p>}
-        <div className="dialog-actions">
-          <button type="button" className="text-button" onClick={onClose}>閉じる</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [tip, setTip] = useState<TipState | null>(null);
   const [dialogSlot, setDialogSlot] = useState<number | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameSlot, setRenameSlot] = useState<number | null>(null);
 
@@ -183,12 +135,6 @@ export default function App() {
     });
     return () => { unlisten.then(f => f()); };
   }, [currentPage]);
-
-  // メニューバーの「設定…」(⌘,) は Rust 側からイベントで届く
-  useEffect(() => {
-    const unlisten = listen("open-settings", () => setSettingsOpen(true));
-    return () => { unlisten.then(f => f()); };
-  }, []);
 
   // URL を貼り付け (Cmd+V) ると、現在のページの最初の空きスロットに登録する。入力欄への貼り付けは対象外。
   useEffect(() => {
@@ -282,7 +228,6 @@ export default function App() {
           onClose={() => setRenameSlot(null)}
         />
       )}
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

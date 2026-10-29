@@ -42,14 +42,11 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 .dialog input:focus { border-color: #4a90e2; }
 .dialog input:disabled { opacity: 0.6; }
 .dialog-error { margin: 8px 0 0; color: #ff8a80; font-size: 12px; }
-/* 設定ダイアログ: 小さなウィンドウでも読めるよう固定サイズ (px) で表示する */
-.dialog.settings { width: min(300px, 85%); padding: 16px; }
-.dialog-title { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
-.setting-row { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+/* 設定ウィンドウ (別ウィンドウ。固定サイズなので px で書く) */
+.settings-view { box-sizing: border-box; height: 100%; padding: 20px 24px; }
+.setting-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .setting-row input { margin: 0; accent-color: #4a90e2; }
-.dialog-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
-.text-button { padding: 5px 14px; border: none; border-radius: 6px; background: #3a3a3a; color: #fff; font-size: 13px; cursor: pointer; }
-.text-button:hover { background: #4a4a4a; }
+.settings-error { margin: 10px 0 0; color: #ff8a80; font-size: 12px; }
 /* 登録済みアイテムの右クリックメニュー: 文字が読めるよう固定サイズ (px)。寸法は App.tsx の CONTEXT_MENU_SIZE と合わせる */
 .context-menu-layer { position: fixed; inset: 0; z-index: 15; }
 .context-menu { position: fixed; box-sizing: border-box; width: 150px; padding: 4px; border-radius: 8px; background: #2f2f2f; border: 1px solid #444; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }

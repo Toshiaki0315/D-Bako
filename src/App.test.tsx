@@ -5,16 +5,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const invokeMock = vi.fn();
 const unlistenMock = vi.fn();
 let dropHandler: ((event: { payload: { paths?: string[] } }) => Promise<void>) | null;
-let settingsHandler: (() => void) | null;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async (name: string, handler: never) => {
-    if (name === "tauri://drop") dropHandler = handler;
-    if (name === "open-settings") settingsHandler = handler;
+  listen: vi.fn(async (_name: string, handler: typeof dropHandler) => {
+    dropHandler = handler;
     return unlistenMock;
   }),
 }));
@@ -55,7 +53,6 @@ beforeEach(() => {
   invokeMock.mockReset();
   unlistenMock.mockReset();
   dropHandler = null;
-  settingsHandler = null;
 });
 
 describe("App", () => {
@@ -398,83 +395,6 @@ describe("App URL dialog", () => {
     await userEvent.click(emptySlot(1));
     paste("example.com", screen.getByRole("textbox", { name: "URL" }));
     expect(invokeMock).not.toHaveBeenCalledWith("add_url_to_first_empty", expect.anything());
-  });
-});
-
-describe("App settings dialog", () => {
-  function mockSettings(alwaysOnTop: boolean, setAlwaysOnTop: (enabled: boolean) => Promise<void> = async () => {}) {
-    invokeMock.mockImplementation(async (cmd: string, args?: { enabled: boolean }) => {
-      if (cmd === "get_state") return makeState();
-      if (cmd === "get_settings") return { always_on_top: alwaysOnTop };
-      if (cmd === "set_always_on_top") return setAlwaysOnTop(args!.enabled);
-      return undefined;
-    });
-  }
-
-  async function openSettings() {
-    await waitFor(() => expect(settingsHandler).not.toBeNull());
-    act(() => settingsHandler!());
-    return screen.findByRole("checkbox", { name: "常に前に表示" });
-  }
-
-  it("opens from the menu and shows the saved setting", async () => {
-    await renderApp();
-    mockSettings(true);
-    expect(screen.queryByRole("dialog", { name: "設定" })).not.toBeInTheDocument();
-
-    const checkbox = await openSettings();
-    expect(screen.getByRole("dialog", { name: "設定" })).toBeInTheDocument();
-    expect(checkbox).toBeChecked();
-  });
-
-  it("turns always-on-top on and off", async () => {
-    await renderApp();
-    mockSettings(false);
-    const checkbox = await openSettings();
-    expect(checkbox).not.toBeChecked();
-
-    await userEvent.click(checkbox);
-    expect(invokeMock).toHaveBeenCalledWith("set_always_on_top", { enabled: true });
-    expect(checkbox).toBeChecked();
-
-    await userEvent.click(checkbox);
-    expect(invokeMock).toHaveBeenCalledWith("set_always_on_top", { enabled: false });
-    expect(checkbox).not.toBeChecked();
-  });
-
-  it("keeps the previous value and shows the reason when the change fails", async () => {
-    await renderApp();
-    mockSettings(false, async () => { throw "write denied"; });
-    const checkbox = await openSettings();
-
-    await userEvent.click(checkbox);
-    expect(await screen.findByText(/write denied/)).toBeInTheDocument();
-    expect(checkbox).not.toBeChecked();
-  });
-
-  it("closes with the close button, Escape or a click on the backdrop", async () => {
-    await renderApp();
-    mockSettings(false);
-
-    await openSettings();
-    await userEvent.click(screen.getByRole("button", { name: "閉じる" }));
-    expect(screen.queryByRole("dialog", { name: "設定" })).not.toBeInTheDocument();
-
-    await openSettings();
-    await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "設定" })).not.toBeInTheDocument();
-
-    await openSettings();
-    await userEvent.click(document.querySelector(".backdrop")!);
-    expect(screen.queryByRole("dialog", { name: "設定" })).not.toBeInTheDocument();
-  });
-
-  it("does not close when the dialog itself is clicked", async () => {
-    await renderApp();
-    mockSettings(false);
-    await openSettings();
-    await userEvent.click(screen.getByRole("dialog", { name: "設定" }));
-    expect(screen.getByRole("dialog", { name: "設定" })).toBeInTheDocument();
   });
 });
 
