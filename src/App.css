@@ -67,3 +67,7 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 .context-menu { position: fixed; box-sizing: border-box; width: 150px; padding: 4px; border-radius: 8px; background: #2f2f2f; border: 1px solid #444; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
 .context-menu button { display: block; box-sizing: border-box; width: 100%; padding: 5px 10px; border: none; border-radius: 5px; background: transparent; color: #fff; font-size: 13px; text-align: left; cursor: pointer; }
 .context-menu button:hover, .context-menu button:focus-visible { background: #4a90e2; outline: none; }
+/* 起動時の読み込みに失敗したときの表示 */
+.load-error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; text-align: center; color: #ff8a80; font-size: 0.875rem; }
+.load-error p { margin: 0; }
+button.reload { width: auto; height: auto; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; }

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
 const unlistenMock = vi.fn();
@@ -22,6 +22,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "./App";
+import { LOAD_RETRY_DELAYS } from "./lib/retry";
 
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
 
@@ -720,5 +721,77 @@ describe("App grid layout", () => {
     mockBackend(makeState(2));
     await act(async () => { changedHandler!(); });
     expect(screen.getByText("2 / 2")).toBeInTheDocument();
+  });
+});
+
+describe("App startup loading", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** get_state が `failures` 回失敗してから成功するバックエンド。 */
+  function flakyBackend(failures: number) {
+    const calls = { get_state: 0 };
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd !== "get_state") return undefined;
+      calls.get_state += 1;
+      if (calls.get_state <= failures) throw "state not ready";
+      return makeState(3, { "0:0": foo });
+    });
+    return calls;
+  }
+
+  it("retries the first state load and shows the grid once it succeeds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const calls = flakyBackend(2);
+    render(<App />);
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+
+    expect(await screen.findByText("1 / 3")).toBeInTheDocument();
+    expect(calls.get_state).toBe(3);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows the reason and a reload button when every attempt fails", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const calls = flakyBackend(Infinity);
+    render(<App />);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("state not ready");
+    expect(screen.getByRole("button", { name: "再読み込み" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading...")).not.toBeInTheDocument();
+    expect(calls.get_state).toBe(1 + LOAD_RETRY_DELAYS.length);
+  });
+
+  it("loads again when the reload button is pressed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let healthy = false;
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd !== "get_state") return undefined;
+      if (!healthy) throw "state not ready";
+      return makeState(3, { "0:0": foo });
+    });
+    render(<App />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    const reload = await screen.findByRole("button", { name: "再読み込み" });
+
+    healthy = true;
+    fireEvent.click(reload);
+
+    expect(await screen.findByText("1 / 3")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("lets the window be dragged even while the load has failed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    flakyBackend(Infinity);
+    render(<App />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    await screen.findByRole("alert");
+    expect(document.querySelector("[data-tauri-drag-region]")).not.toBeNull();
   });
 });

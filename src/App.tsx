@@ -6,6 +6,7 @@ import { pickAppPath, wrapPage } from "./lib/launcher";
 import { looksLikeUrl, pickShortcutFile } from "./lib/link";
 import { tooltipPosition } from "./lib/tooltip";
 import { contextMenuPosition } from "./lib/contextMenu";
+import { LOAD_RETRY_DELAYS, retry } from "./lib/retry";
 import { isDragGesture, isOutsideWindow, resolveItemDrop, slotIndexOf, toClientPoint } from "./lib/drag";
 import type { Point } from "./lib/drag";
 import { AppIcon } from "./components/AppIcon";
@@ -109,6 +110,9 @@ export default function App() {
   const [state, setState] = useState<LauncherState | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // 起動時の読み込みが失敗しきったときの理由。再読み込みのたびに loadAttempt を進めてやり直す。
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [tip, setTip] = useState<TipState | null>(null);
   const [dialogSlot, setDialogSlot] = useState<number | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -128,8 +132,24 @@ export default function App() {
     await fetchState();
   }
 
+  // 起動直後は裏側の準備が間に合わないことがあるので、最初の読み込みは失敗しても何度かやり直す。
+  // それでも読めなければ、「Loading...」のまま止まらないよう理由と再読み込みの手段を出す。
   useEffect(() => {
-    fetchState();
+    let cancelled = false;
+    retry(fetchState, LOAD_RETRY_DELAYS).catch((e) => {
+      if (!cancelled) setLoadError(String(e));
+    });
+    return () => { cancelled = true; };
+  }, [loadAttempt]);
+
+  function reload() {
+    setLoadError(null);
+    setLoadAttempt((n) => n + 1);
+  }
+
+  useEffect(() => {
+    // 最初の読み込みは上の effect が受け持つ。ページを移ったときは読み直す。
+    if (state) fetchState().catch(() => {});
 
     // Tauri v2 のファイルドロップは "tauri://drag-drop" で届く (旧名 "tauri://drop" では届かない)
     const unlisten = listen('tauri://drag-drop', async (event: any) => {
@@ -246,6 +266,17 @@ export default function App() {
     setRenameSlot(null);
   }
 
+  if (!state && loadError) {
+    return (
+      <div className="container">
+        <div className="drag-region" data-tauri-drag-region />
+        <div className="load-error" role="alert">
+          <p>起動に失敗しました: {loadError}</p>
+          <button type="button" className="reload" onClick={reload}>再読み込み</button>
+        </div>
+      </div>
+    );
+  }
   if (!state) return <div>Loading...</div>;
 
   const currentSlots = state.pages[currentPage];
