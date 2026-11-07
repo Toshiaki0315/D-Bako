@@ -32,6 +32,23 @@ pub fn write_atomic<F: FileSystem>(fs: &F, path: &Path, contents: &str) -> Resul
     fs.rename(&tmp, path).map_err(|e| e.to_string())
 }
 
+/// 状態ファイルを読み込めなかった理由。
+#[derive(Debug, PartialEq)]
+pub enum LoadError {
+    /// 権限エラーなど、ファイルを読み出せなかった。ファイル自体は無傷かもしれない。
+    Io(String),
+    /// 読み出せたが、JSON として・状態として正しくなかった。
+    Corrupt(String),
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoadError::Io(m) | LoadError::Corrupt(m) => f.write_str(m),
+        }
+    }
+}
+
 pub struct StateStore<F: FileSystem> {
     pub(crate) fs: F,
     path: PathBuf,
@@ -41,11 +58,12 @@ impl<F: FileSystem> StateStore<F> {
     pub fn new(fs: F, path: PathBuf) -> Self { Self { fs, path } }
 
     /// 保存済みの状態を読み込む。ファイルが無ければ初期状態 (10 ページ) を返す。
-    pub fn load(&self) -> Result<LauncherState, String> {
+    /// 失敗は、読めなかった (`Io`) のか、読めたが中身が壊れていた (`Corrupt`) のかを区別して返す。
+    pub fn load(&self) -> Result<LauncherState, LoadError> {
         match self.fs.read_to_string(&self.path) {
-            Ok(json) => LauncherState::from_json(&json),
+            Ok(json) => LauncherState::from_json(&json).map_err(LoadError::Corrupt),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(LauncherState::new(10)),
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(LoadError::Io(e.to_string())),
         }
     }
 
@@ -146,19 +164,22 @@ mod tests {
     fn load_errors_on_corrupt_file() {
         let fs = MockFs::default();
         fs.files.borrow_mut().insert(PathBuf::from("/data/dbako/state.json"), "{broken".into());
-        assert!(store(fs).load().is_err());
+        assert!(matches!(store(fs).load(), Err(LoadError::Corrupt(_))));
     }
 
     #[test]
     fn load_errors_on_invalid_state_content() {
         let fs = MockFs::default();
         fs.files.borrow_mut().insert(PathBuf::from("/data/dbako/state.json"), r#"{"pages":[],"max_pages":0}"#.into());
-        assert_eq!(store(fs).load().unwrap_err(), "Invalid max_pages");
+        assert_eq!(store(fs).load().unwrap_err(), LoadError::Corrupt("Invalid max_pages".to_string()));
     }
 
     #[test]
     fn load_propagates_non_notfound_io_errors() {
-        assert!(store(MockFs::failing("read")).load().unwrap_err().contains("read denied"));
+        let err = store(MockFs::failing("read")).load().unwrap_err();
+        assert!(matches!(&err, LoadError::Io(m) if m.contains("read denied")), "{err:?}");
+        assert!(err.to_string().contains("read denied"));
+        assert!(LoadError::Corrupt("bad json".into()).to_string().contains("bad json"));
     }
 
     #[test]

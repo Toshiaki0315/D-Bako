@@ -155,17 +155,28 @@ fn get_layout(state: State<'_, AppState>) -> LayoutView {
 #[tauri::command]
 fn set_layout(cols: usize, rows: usize, pages: usize, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let main = app.get_webview_window("main").ok_or("main window not found")?;
+    let old_size = (|| -> tauri::Result<(f64, f64)> {
+        let size = main.inner_size()?.to_logical::<f64>(main.scale_factor()?);
+        Ok((size.width, size.height))
+    })()
+    .map_err(|e| e.to_string())?;
+
+    // ウィンドウの大きさの変更と通知まで成功して初めて設定を確定する。
+    // 途中で失敗したら、状態と保存ファイルは元に戻り、ウィンドウも元の大きさ・縦横比に戻す (できる範囲で)。
     let mut launcher = state.launcher.lock().unwrap();
     let from = (launcher.state().cols, launcher.state().rows);
-    launcher.set_layout(cols, rows, pages)?;
-    drop(launcher);
-    let resize = || -> tauri::Result<()> {
-        let width = main.inner_size()?.to_logical::<f64>(main.scale_factor()?).width;
-        let size = window::resize_for_layout(width, from, (cols, rows), screen_size(&main)?);
-        fit_window_to_grid(&main, cols, rows, size)
-    };
-    resize().map_err(|e| e.to_string())?;
-    main.emit("launcher-changed", ()).map_err(|e| e.to_string())
+    let result = launcher.set_layout_then(cols, rows, pages, || {
+        let resize = || -> tauri::Result<()> {
+            let size = window::resize_for_layout(old_size.0, from, (cols, rows), screen_size(&main)?);
+            fit_window_to_grid(&main, cols, rows, size)
+        };
+        resize().map_err(|e| e.to_string())?;
+        main.emit("launcher-changed", ()).map_err(|e| e.to_string())
+    });
+    if result.is_err() {
+        let _ = fit_window_to_grid(&main, from.0, from.1, old_size);
+    }
+    result
 }
 
 /// アイコン抽出はファイル I/O を伴うため、UI/非同期ランタイムを塞がないよう別スレッドで実行する。
