@@ -28,15 +28,16 @@ export function SettingsView() {
     invoke<Layout>("get_layout").then(setLayout);
   }, []);
 
-  /** 先に見た目を切り替え、保存・反映に失敗したら元に戻す。 */
+  /** 先に見た目を切り替え、失敗したら実際の状態を読み直す
+   *  (ログイン項目は登録できても「許可待ち」でエラーになることがあり、単純に元へ戻すと実際とずれる)。 */
   async function toggle(key: keyof Settings, command: string, enabled: boolean) {
     setSettings((s) => s && { ...s, [key]: enabled });
     setError(null);
     try {
       await invoke(command, { enabled });
     } catch (err) {
-      setSettings((s) => s && { ...s, [key]: !enabled });
       setError(String(err));
+      setSettings(await invoke<Settings>("get_settings"));
     }
   }
 

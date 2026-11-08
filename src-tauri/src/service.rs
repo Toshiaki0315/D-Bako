@@ -117,6 +117,7 @@ mod tests {
         fn write(&self, path: &Path, contents: &str) -> io::Result<()> { self.0.write(path, contents) }
         fn rename(&self, from: &Path, to: &Path) -> io::Result<()> { self.0.rename(from, to) }
         fn create_dir_all(&self, path: &Path) -> io::Result<()> { self.0.create_dir_all(path) }
+        fn remove_file(&self, path: &Path) -> io::Result<()> { self.0.remove_file(path) }
     }
 
     fn layout(s: &LauncherState) -> (usize, usize, usize) { (s.cols, s.rows, s.max_pages) }

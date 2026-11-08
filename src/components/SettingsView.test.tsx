@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -120,6 +120,23 @@ describe("SettingsView", () => {
       await userEvent.click(loginCheckbox());
       expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: launchctl failed");
       expect(loginCheckbox()).not.toBeChecked();
+    });
+
+    it("shows the actual state when the OS registered it but still needs approval", async () => {
+      let registered = false;
+      invokeMock.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_settings") return { always_on_top: false, launch_at_login: registered };
+        if (cmd === "set_launch_at_login") {
+          registered = true;
+          throw "システム設定の「ログイン項目」で道具箱を許可してください";
+        }
+        return undefined;
+      });
+      await renderSettings();
+
+      await userEvent.click(loginCheckbox());
+      expect(await screen.findByRole("alert")).toHaveTextContent("ログイン項目");
+      await waitFor(() => expect(loginCheckbox()).toBeChecked());
     });
   });
 });

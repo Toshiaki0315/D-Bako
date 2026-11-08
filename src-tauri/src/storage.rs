@@ -10,6 +10,7 @@ pub trait FileSystem {
     fn write(&self, path: &Path, contents: &str) -> io::Result<()>;
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
+    fn remove_file(&self, path: &Path) -> io::Result<()>;
 }
 
 /// 実ファイルシステム。
@@ -20,6 +21,7 @@ impl FileSystem for StdFs {
     fn write(&self, path: &Path, contents: &str) -> io::Result<()> { std::fs::write(path, contents) }
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> { std::fs::rename(from, to) }
     fn create_dir_all(&self, path: &Path) -> io::Result<()> { std::fs::create_dir_all(path) }
+    fn remove_file(&self, path: &Path) -> io::Result<()> { std::fs::remove_file(path) }
 }
 
 /// 一時ファイルへ書いてから rename することで、書き込み途中の破損を避ける。親ディレクトリも作る。
@@ -121,6 +123,10 @@ pub(crate) mod mock {
             self.check("mkdir")?;
             self.dirs.borrow_mut().insert(path.to_path_buf());
             Ok(())
+        }
+        fn remove_file(&self, path: &Path) -> io::Result<()> {
+            self.check("remove")?;
+            self.files.borrow_mut().remove(path).map(|_| ()).ok_or_else(|| Error::from(ErrorKind::NotFound))
         }
     }
 }

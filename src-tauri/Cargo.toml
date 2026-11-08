@@ -23,7 +23,6 @@ icns = "0.3"
 base64 = "0.22"
 url = "2"
 ureq = "2"
-tauri-plugin-autostart = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
@@ -34,3 +33,4 @@ tempfile = "3"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", features = ["NSWindow"] }
 objc2-foundation = { version = "0.3", features = ["NSGeometry"] }
+smappservice-rs = "0.1"

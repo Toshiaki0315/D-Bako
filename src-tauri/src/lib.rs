@@ -2,6 +2,7 @@ pub mod core;
 pub mod favicon;
 pub mod icon;
 pub mod link;
+pub mod login_item;
 pub mod menu;
 pub mod net;
 pub mod service;
@@ -10,9 +11,9 @@ pub mod storage;
 pub mod window;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_shell::ShellExt;
 use core::{AppItem, LauncherState};
+use login_item::{LoginItem, LoginItemStatus};
 use service::LauncherService;
 use settings::SettingsService;
 use storage::{StateStore, StdFs};
@@ -110,24 +111,77 @@ fn move_app(page_idx: usize, from_slot: usize, to_slot: usize, state: State<'_, 
     state.launcher.lock().unwrap().move_app(page_idx, from_slot, to_slot)
 }
 
+/// macOS のログイン項目 (SMAppService.mainApp)。`.app` を LaunchServices 経由で起動してもらうので、
+/// 通常のアプリと同じように起動し、システム設定の「ログイン項目」にも表示される。
+struct MainAppLoginItem;
+
+#[cfg(target_os = "macos")]
+impl LoginItem for MainAppLoginItem {
+    fn status(&self) -> LoginItemStatus {
+        use smappservice_rs::{AppService, ServiceStatus, ServiceType};
+        match AppService::new(ServiceType::MainApp).status() {
+            ServiceStatus::Enabled => LoginItemStatus::Enabled,
+            ServiceStatus::RequiresApproval => LoginItemStatus::RequiresApproval,
+            ServiceStatus::NotFound => LoginItemStatus::NotFound,
+            _ => LoginItemStatus::NotRegistered,
+        }
+    }
+    fn register(&self) -> Result<(), String> {
+        use smappservice_rs::{AppService, ServiceType};
+        AppService::new(ServiceType::MainApp).register().map_err(|e| e.to_string())
+    }
+    fn unregister(&self) -> Result<(), String> {
+        use smappservice_rs::{AppService, ServiceType};
+        AppService::new(ServiceType::MainApp).unregister().map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl LoginItem for MainAppLoginItem {
+    fn status(&self) -> LoginItemStatus { LoginItemStatus::NotFound }
+    fn register(&self) -> Result<(), String> { Err("Unsupported platform".to_string()) }
+    fn unregister(&self) -> Result<(), String> { Ok(()) }
+}
+
+/// `.app` の中から起動しているか (開発用バイナリはログイン項目に登録できない)。
+fn running_in_bundle() -> bool {
+    std::env::current_exe().ok().and_then(|exe| login_item::bundle_of(&exe)).is_some()
+}
+
+/// 以前の版は `~/Library/LaunchAgents/D-Bako.plist` で登録していた。それは実行ファイルを直接起動するため、
+/// 開発用バイナリが登録されると中身の無い白いウィンドウが開いていた。消して、ログイン項目として登録し直す。
+/// 登録し直せるのは `.app` から起動したときだけなので、開発用バイナリでは何もしない (消すだけになってしまう)。
+fn migrate_legacy_launch_agent(app: &tauri::App) {
+    if !running_in_bundle() { return; }
+    let Ok(home) = app.path().home_dir() else { return };
+    let legacy = home.join("Library/LaunchAgents/D-Bako.plist");
+    match login_item::remove_legacy_launch_agent(&StdFs, &legacy) {
+        Ok(true) => {
+            if let Err(e) = login_item::set_enabled(&MainAppLoginItem, true, running_in_bundle()) {
+                eprintln!("failed to register the login item: {e}");
+            }
+        }
+        Ok(false) => {}
+        Err(e) => eprintln!("failed to remove the legacy launch agent: {e}"),
+    }
+}
+
 /// 設定ウィンドウに見せる値。「起動時に実行する」は OS への登録状態そのものなので、保存せず毎回問い合わせる。
 #[derive(serde::Serialize)]
 struct SettingsView { always_on_top: bool, launch_at_login: bool }
 
 #[tauri::command]
-fn get_settings(app: tauri::AppHandle, state: State<'_, AppState>) -> SettingsView {
+fn get_settings(state: State<'_, AppState>) -> SettingsView {
     SettingsView {
         always_on_top: state.settings.lock().unwrap().settings().always_on_top,
-        launch_at_login: app.autolaunch().is_enabled().unwrap_or(false),
+        launch_at_login: login_item::is_enabled(&MainAppLoginItem),
     }
 }
 
-/// ログイン時に起動するよう OS (~/Library/LaunchAgents) に登録・解除する。
+/// ログイン時に起動するよう、macOS のログイン項目に登録・解除する。
 #[tauri::command]
-fn set_launch_at_login(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
-    let autolaunch = app.autolaunch();
-    let result = if enabled { autolaunch.enable() } else { autolaunch.disable() };
-    result.map_err(|e| e.to_string())
+fn set_launch_at_login(enabled: bool) -> Result<(), String> {
+    login_item::set_enabled(&MainAppLoginItem, enabled, running_in_bundle())
 }
 
 /// 保存できてからメインウィンドウに反映する (次回起動時の状態と食い違わないように)。
@@ -237,7 +291,6 @@ fn lock_aspect_ratio(window: &tauri::WebviewWindow, cols: usize, rows: usize) ->
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .menu(menu::build)
         .on_menu_event(|app, event| menu::handle_event(app, event.id().as_ref()))
         // 覚えるのはメインウィンドウの大きさだけ (設定ウィンドウは対象外)
@@ -266,6 +319,7 @@ pub fn run() {
             let size = window::restore_size(settings.settings().window_width, cols, rows, screen_size(&window)?);
             fit_window_to_grid(&window, cols, rows, size)?;
             app.manage(AppState { launcher: Mutex::new(launcher), settings: Mutex::new(settings) });
+            migrate_legacy_launch_agent(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
