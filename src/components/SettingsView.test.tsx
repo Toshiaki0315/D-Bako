@@ -88,6 +88,47 @@ describe("SettingsView", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  describe("show on all desktops", () => {
+    const allDesktops = () => screen.getByRole("checkbox", { name: "すべてのデスクトップに表示" });
+
+    function mockAllDesktops(enabled: boolean, set: (enabled: boolean) => Promise<void> = async () => {}) {
+      invokeMock.mockImplementation(async (cmd: string, args?: { enabled: boolean }) => {
+        if (cmd === "get_settings") return { always_on_top: false, visible_on_all_workspaces: enabled, launch_at_login: false };
+        if (cmd === "set_visible_on_all_workspaces") return set(args!.enabled);
+        return undefined;
+      });
+    }
+
+    it("shows the saved setting", async () => {
+      mockAllDesktops(true);
+      await renderSettings();
+      expect(allDesktops()).toBeChecked();
+    });
+
+    it("turns it on and off without touching the other settings", async () => {
+      mockAllDesktops(false);
+      const onTop = await renderSettings();
+
+      await userEvent.click(allDesktops());
+      expect(invokeMock).toHaveBeenCalledWith("set_visible_on_all_workspaces", { enabled: true });
+      expect(allDesktops()).toBeChecked();
+
+      await userEvent.click(allDesktops());
+      expect(invokeMock).toHaveBeenCalledWith("set_visible_on_all_workspaces", { enabled: false });
+      expect(allDesktops()).not.toBeChecked();
+      expect(onTop).not.toBeChecked();
+    });
+
+    it("goes back and shows the reason when saving fails", async () => {
+      mockAllDesktops(false, async () => { throw "write denied"; });
+      await renderSettings();
+
+      await userEvent.click(allDesktops());
+      expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: write denied");
+      await waitFor(() => expect(allDesktops()).not.toBeChecked());
+    });
+  });
+
   describe("launch at login", () => {
     const loginCheckbox = () => screen.getByRole("checkbox", { name: "起動時に実行する" });
 

@@ -9,6 +9,8 @@ use std::path::PathBuf;
 #[serde(default)]
 pub struct Settings {
     pub always_on_top: bool,
+    /// すべてのデスクトップ (操作スペース) に表示するか。
+    pub visible_on_all_workspaces: bool,
     /// 前回終了時のウィンドウ幅 (論理ピクセル)。高さは縦横比から決まるので保存しない。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_width: Option<f64>,
@@ -37,13 +39,21 @@ impl<F: FileSystem> SettingsService<F> {
     }
 
     /// 保存できた場合だけメモリ上の設定を変える (失敗してもファイルとずれない)。
-    pub fn set_always_on_top(&mut self, enabled: bool) -> Result<(), String> {
+    fn update(&mut self, change: impl FnOnce(&mut Settings)) -> Result<(), String> {
         let mut next = self.settings.clone();
-        next.always_on_top = enabled;
+        change(&mut next);
         self.write(&next)?;
         self.settings = next;
         self.dirty = false;
         Ok(())
+    }
+
+    pub fn set_always_on_top(&mut self, enabled: bool) -> Result<(), String> {
+        self.update(|s| s.always_on_top = enabled)
+    }
+
+    pub fn set_visible_on_all_workspaces(&mut self, enabled: bool) -> Result<(), String> {
+        self.update(|s| s.visible_on_all_workspaces = enabled)
     }
 
     /// ウィンドウ幅を覚える。リサイズ中は頻繁に呼ばれるので、保存は `flush` でまとめて行う。
@@ -177,6 +187,30 @@ mod tests {
         svc.fs.files.borrow_mut().clear();
         svc.flush().unwrap();
         assert_eq!(saved(&svc), None, "already saved");
+    }
+
+    #[test]
+    fn defaults_to_showing_only_on_the_current_desktop() {
+        assert!(!Settings::default().visible_on_all_workspaces);
+        assert!(!service(with_file(r#"{"always_on_top":true}"#)).settings().visible_on_all_workspaces, "old file");
+    }
+
+    #[test]
+    fn set_visible_on_all_workspaces_updates_and_persists() {
+        let mut svc = service(MockFs::default());
+        svc.set_visible_on_all_workspaces(true).unwrap();
+        assert!(svc.settings().visible_on_all_workspaces);
+        assert!(!svc.settings().always_on_top);
+
+        let reopened = SettingsService::open(with_file(&saved(&svc).unwrap()), PathBuf::from(PATH));
+        assert!(reopened.settings().visible_on_all_workspaces);
+    }
+
+    #[test]
+    fn set_visible_on_all_workspaces_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::failing("write"));
+        assert!(svc.set_visible_on_all_workspaces(true).unwrap_err().contains("write denied"));
+        assert!(!svc.settings().visible_on_all_workspaces);
     }
 
     #[test]

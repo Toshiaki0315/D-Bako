@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-type Settings = { always_on_top: boolean; launch_at_login: boolean };
+type Settings = { always_on_top: boolean; visible_on_all_workspaces: boolean; launch_at_login: boolean };
 type Layout = { cols: number; rows: number; pages: number };
 
 /** グリッドの横・縦の数とページ数の選択肢 (Rust 側の MAX_COLS / MAX_ROWS / MAX_PAGES と合わせる)。 */
@@ -14,6 +14,7 @@ const LAYOUT_FIELDS: { key: keyof Layout; label: string; max: number }[] = [
 /** チェックボックスで切り替える項目と、変更を反映するコマンド。 */
 const TOGGLES: { key: keyof Settings; label: string; command: string }[] = [
   { key: "always_on_top", label: "常に前に表示", command: "set_always_on_top" },
+  { key: "visible_on_all_workspaces", label: "すべてのデスクトップに表示", command: "set_visible_on_all_workspaces" },
   { key: "launch_at_login", label: "起動時に実行する", command: "set_launch_at_login" },
 ];
 
@@ -64,7 +65,7 @@ export function SettingsView() {
           {TOGGLES.map(({ key, label, command }) => (
             <label key={key} className="settings-row">
               <span>{label}</span>
-              <input type="checkbox" checked={settings[key]} onChange={(e) => toggle(key, command, e.target.checked)} />
+              <input type="checkbox" checked={Boolean(settings[key])} onChange={(e) => toggle(key, command, e.target.checked)} />
             </label>
           ))}
         </div>

@@ -11,11 +11,11 @@ const GAP: f64 = 6.0;
 /// グリッド以外に要る幅 (左右の余白) と高さ (タイトルバー・ページ送り・下の余白)。
 const PAD_X: f64 = 22.0;
 const CHROME_Y: f64 = 104.0;
-/// 基準サイズの半分までは小さくできる。
-const MIN_SCALE: f64 = 0.5;
-/// 信号ボタンとページ送りが収まる最小の幅・高さ。
-const FLOOR_WIDTH: f64 = 200.0;
-const FLOOR_HEIGHT: f64 = 205.0;
+/// 基準サイズの 0.28 倍までは小さくできる (ページ送りもウィンドウに合わせて縮むので、マスは約 30px 角まで縮む)。
+const MIN_SCALE: f64 = 0.28;
+/// 信号ボタン・タイトルバー (高さ 28px 固定) とページ送りが収まる最小の幅・高さ。
+const FLOOR_WIDTH: f64 = 120.0;
+const FLOOR_HEIGHT: f64 = 90.0;
 
 /// グリッドの大きさ (横・縦の数) に合った基準サイズ (幅, 高さ)。
 pub fn base_size(cols: usize, rows: usize) -> (f64, f64) {
@@ -90,8 +90,16 @@ mod tests {
     }
 
     #[test]
-    fn min_size_of_the_default_grid_is_half_of_the_base_size() {
-        assert_eq!(min_size(4, 2), (BASE_WIDTH / 2.0, BASE_HEIGHT / 2.0));
+    fn min_size_of_the_default_grid_is_0_28_of_the_base_size() {
+        // 以前の最小 (基準の 0.5 倍) に比べ、マスの大きさがおよそ半分になる大きさ
+        let (w, h) = min_size(4, 2);
+        assert!((w - BASE_WIDTH * 0.28).abs() < EPS && (h - BASE_HEIGHT * 0.28).abs() < EPS, "{w}x{h}");
+    }
+
+    #[test]
+    fn min_size_floor_keeps_room_for_the_traffic_lights_and_the_title_bar() {
+        assert!(FLOOR_WIDTH >= 120.0 && FLOOR_HEIGHT >= 90.0);
+        assert!(FLOOR_WIDTH < 200.0 && FLOOR_HEIGHT < 205.0, "smaller than before");
     }
 
     #[test]

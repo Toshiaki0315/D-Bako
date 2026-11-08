@@ -32,10 +32,11 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
    ウィンドウの大きさに関係なく、タイトルバーの文字 (システムフォント 13pt) と同じ固定サイズで表示する */
 .tooltip { position: fixed; max-width: 180px; padding: 5px 10px; border-radius: 6px; background: #f2f2f2; color: #1e1e1e; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; z-index: 10; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
 .error { margin: 0.625rem 0 0; color: #ff8a80; font-size: 0.75rem; text-align: center; }
-/* ページ移動は操作しやすさを優先し、ウィンドウの大きさに関係なく固定サイズ (px) で表示する */
-.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 10px; font-size: 15px; color: #bbb; font-variant-numeric: tabular-nums; }
-.pager button { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
-.pager button svg { width: 20px; height: 20px; }
+/* ページ移動もウィンドウの大きさに合わせて拡縮する (基準の幅 640px で、ボタン 36px・文字 15px)。
+   小さくしても押せるよう、ボタンは 16px 角、文字は 12px を下回らない */
+.pager { flex: none; display: flex; align-items: center; justify-content: center; gap: 1rem; padding-top: 0.625rem; font-size: max(0.9375rem, 12px); color: #bbb; font-variant-numeric: tabular-nums; }
+.pager button { display: flex; align-items: center; justify-content: center; width: max(2.25rem, 16px); height: max(2.25rem, 16px); padding: 0; background: #3a3a3a; color: white; border: none; border-radius: 50%; cursor: pointer; }
+.pager button svg { width: 55%; height: 55%; }
 .pager button:hover { background: #4a4a4a; }
 .pager button:disabled { background: #252525; color: #555; cursor: not-allowed; }
 /* URL ショートカット: 透明な余白を持たない小さな画像なので、スロットいっぱいのタイルの中に収める */

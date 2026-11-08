@@ -168,12 +168,14 @@ fn migrate_legacy_launch_agent(app: &tauri::App) {
 
 /// 設定ウィンドウに見せる値。「起動時に実行する」は OS への登録状態そのものなので、保存せず毎回問い合わせる。
 #[derive(serde::Serialize)]
-struct SettingsView { always_on_top: bool, launch_at_login: bool }
+struct SettingsView { always_on_top: bool, visible_on_all_workspaces: bool, launch_at_login: bool }
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> SettingsView {
+    let settings = state.settings.lock().unwrap().settings().clone();
     SettingsView {
-        always_on_top: state.settings.lock().unwrap().settings().always_on_top,
+        always_on_top: settings.always_on_top,
+        visible_on_all_workspaces: settings.visible_on_all_workspaces,
         launch_at_login: login_item::is_enabled(&MainAppLoginItem),
     }
 }
@@ -191,6 +193,14 @@ fn set_always_on_top(enabled: bool, app: tauri::AppHandle, state: State<'_, AppS
     state.settings.lock().unwrap().set_always_on_top(enabled)?;
     let main = app.get_webview_window("main").ok_or("main window not found")?;
     main.set_always_on_top(enabled).map_err(|e| e.to_string())
+}
+
+/// デスクトップ (操作スペース) を切り替えても、メインウィンドウを表示したままにする。全画面表示のアプリの上には出さない。
+#[tauri::command]
+fn set_visible_on_all_workspaces(enabled: bool, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state.settings.lock().unwrap().set_visible_on_all_workspaces(enabled)?;
+    let main = app.get_webview_window("main").ok_or("main window not found")?;
+    main.set_visible_on_all_workspaces(enabled).map_err(|e| e.to_string())
 }
 
 /// 設定ウィンドウに見せるグリッドの大きさとページ数。
@@ -314,6 +324,7 @@ pub fn run() {
             let launcher = LauncherService::open(StateStore::new(StdFs, data_dir.join("state.json")));
             let settings = SettingsService::open(StdFs, data_dir.join("settings.json"));
             window.set_always_on_top(settings.settings().always_on_top)?;
+            window.set_visible_on_all_workspaces(settings.settings().visible_on_all_workspaces)?;
             // 前回のウィンドウ幅で開く。画面より大きくならないよう、今いる画面に収める。
             let (cols, rows) = (launcher.state().cols, launcher.state().rows);
             let size = window::restore_size(settings.settings().window_width, cols, rows, screen_size(&window)?);
@@ -335,6 +346,7 @@ pub fn run() {
             get_layout,
             set_layout,
             set_always_on_top,
+            set_visible_on_all_workspaces,
             set_launch_at_login,
             rename_app,
             remove_app,
