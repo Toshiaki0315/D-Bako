@@ -35,6 +35,51 @@ pub fn to_data_url(png: &[u8]) -> String {
     format!("data:image/png;base64,{}", STANDARD.encode(png))
 }
 
+/// 余白を持つアイコンの、絵の部分が占める割合 (他のアイコンと見た目をそろえる目安)。
+const ICON_CONTENT_RATIO: f32 = 0.8;
+/// 角丸の半径 (縮小前の画像の一辺に対する割合)。
+const ICON_CORNER_RATIO: f32 = 0.18;
+
+/// 透明な余白のない全面アイコンを、余白ありのアイコンと同じ見た目にそろえる。
+/// 四隅が不透明なら、中央へ縮小して角丸に切り抜く。余白があるものはそのまま返す。
+pub fn normalize_margin(rgba: &[u8], size: u32) -> Vec<u8> {
+    let n = size as usize;
+    if n == 0 || rgba.len() != n * n * 4 {
+        return rgba.to_vec();
+    }
+    let last = n - 1;
+    if [(0, 0), (last, 0), (0, last), (last, last)].iter().any(|&(x, y)| rgba[(y * n + x) * 4 + 3] < 200) {
+        return rgba.to_vec();
+    }
+    let side = n as f32 * ICON_CONTENT_RATIO;
+    let offset = (n as f32 - side) / 2.0;
+    let radius = n as f32 * ICON_CORNER_RATIO * ICON_CONTENT_RATIO;
+    let mut out = vec![0u8; rgba.len()];
+    for y in 0..n {
+        for x in 0..n {
+            let (px, py) = (x as f32 + 0.5 - offset, y as f32 + 0.5 - offset);
+            if px < 0.0 || py < 0.0 || px >= side || py >= side {
+                continue;
+            }
+            let (cx, cy) = (px.clamp(radius, side - radius), py.clamp(radius, side - radius));
+            if (px - cx).powi(2) + (py - cy).powi(2) > radius * radius {
+                continue;
+            }
+            let (sx, sy) = (px / side * n as f32 - 0.5, py / side * n as f32 - 0.5);
+            let (x0, y0) = (sx.floor().clamp(0.0, last as f32) as usize, sy.floor().clamp(0.0, last as f32) as usize);
+            let (x1, y1) = ((x0 + 1).min(last), (y0 + 1).min(last));
+            let (fx, fy) = ((sx - x0 as f32).clamp(0.0, 1.0), (sy - y0 as f32).clamp(0.0, 1.0));
+            for c in 0..4 {
+                let at = |xx: usize, yy: usize| rgba[(yy * n + xx) * 4 + c] as f32;
+                let top = at(x0, y0) * (1.0 - fx) + at(x1, y0) * fx;
+                let bottom = at(x0, y1) * (1.0 - fx) + at(x1, y1) * fx;
+                out[(y * n + x) * 4 + c] = (top * (1.0 - fy) + bottom * fy).round() as u8;
+            }
+        }
+    }
+    out
+}
+
 /// アプリのアイコンを、最大サイズの PNG バイト列として返す。
 pub fn extract_icon_png(app_path: &Path) -> Result<Vec<u8>, String> {
     let icon_path = find_icon_path(app_path)?;
@@ -46,6 +91,13 @@ pub fn extract_icon_png(app_path: &Path) -> Result<Vec<u8>, String> {
         .max_by_key(|t| t.pixel_width())
         .ok_or_else(|| "No icon images in icns".to_string())?;
     let image = family.get_icon_with_type(largest).map_err(|e| e.to_string())?;
+    let image = image.convert_to(icns::PixelFormat::RGBA);
+    let image = if image.width() == image.height() {
+        let data = normalize_margin(image.data(), image.width());
+        icns::Image::from_data(icns::PixelFormat::RGBA, image.width(), image.height(), data).map_err(|e| e.to_string())?
+    } else {
+        image
+    };
     let mut png = Vec::new();
     image.write_png(&mut png).map_err(|e| e.to_string())?;
     Ok(png)
@@ -131,6 +183,43 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = make_bundle(dir.path(), Some(plist_with(Some("Nope"))), None);
         assert!(find_icon_path(&app).unwrap_err().contains("Icon file not found"));
+    }
+
+
+    fn alpha_at(rgba: &[u8], size: u32, x: u32, y: u32) -> u8 {
+        rgba[((y * size + x) * 4 + 3) as usize]
+    }
+
+    #[test]
+    fn leaves_an_icon_with_a_transparent_margin_alone() {
+        let size = 40u32;
+        let mut rgba = vec![0u8; (size * size * 4) as usize];
+        for y in 4..36 {
+            for x in 4..36 {
+                let i = ((y * size + x) * 4) as usize;
+                rgba[i..i + 4].copy_from_slice(&[10, 20, 30, 255]);
+            }
+        }
+        assert_eq!(normalize_margin(&rgba, size), rgba);
+    }
+
+    #[test]
+    fn shrinks_and_rounds_a_full_bleed_icon() {
+        let size = 100u32;
+        let rgba = vec![255u8; (size * size * 4) as usize];
+        let out = normalize_margin(&rgba, size);
+        assert_eq!(out.len(), rgba.len());
+        assert_eq!(alpha_at(&out, size, 0, 0), 0);
+        assert_eq!(alpha_at(&out, size, 99, 99), 0);
+        assert_eq!(alpha_at(&out, size, 50, 3), 0);
+        assert_eq!(alpha_at(&out, size, 50, 50), 255);
+        assert_eq!(alpha_at(&out, size, 11, 11), 0);
+    }
+
+    #[test]
+    fn normalizing_ignores_a_buffer_of_the_wrong_length() {
+        assert_eq!(normalize_margin(&[1, 2, 3], 10), vec![1, 2, 3]);
+        assert_eq!(normalize_margin(&[], 0), Vec::<u8>::new());
     }
 
     #[test]
