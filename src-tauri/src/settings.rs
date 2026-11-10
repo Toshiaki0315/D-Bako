@@ -11,9 +11,24 @@ pub struct Settings {
     pub always_on_top: bool,
     /// すべてのデスクトップ (操作スペース) に表示するか。
     pub visible_on_all_workspaces: bool,
+    /// ランチャーの後ろに並べる時計などのページのうち、表示するもの。
+    pub widgets: Widgets,
     /// 前回終了時のウィンドウ幅 (論理ピクセル)。高さは縦横比から決まるので保存しない。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_width: Option<f64>,
+}
+
+/// 時計・ポモドーロ・タイマーのページを表示するか。既定ではすべて表示する。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Widgets {
+    pub clock: bool,
+    pub pomodoro: bool,
+    pub timer: bool,
+}
+
+impl Default for Widgets {
+    fn default() -> Self { Self { clock: true, pomodoro: true, timer: true } }
 }
 
 pub struct SettingsService<F: FileSystem> {
@@ -54,6 +69,17 @@ impl<F: FileSystem> SettingsService<F> {
 
     pub fn set_visible_on_all_workspaces(&mut self, enabled: bool) -> Result<(), String> {
         self.update(|s| s.visible_on_all_workspaces = enabled)
+    }
+
+    /// 時計などのページ (`widget`: "clock" / "pomodoro" / "timer") の表示・非表示を変える。
+    pub fn set_widget_visible(&mut self, widget: &str, visible: bool) -> Result<(), String> {
+        let field: fn(&mut Widgets) -> &mut bool = match widget {
+            "clock" => |w| &mut w.clock,
+            "pomodoro" => |w| &mut w.pomodoro,
+            "timer" => |w| &mut w.timer,
+            _ => return Err(format!("unknown page: {widget}")),
+        };
+        self.update(|s| *field(&mut s.widgets) = visible)
     }
 
     /// ウィンドウ幅を覚える。リサイズ中は頻繁に呼ばれるので、保存は `flush` でまとめて行う。
@@ -211,6 +237,45 @@ mod tests {
         let mut svc = service(MockFs::failing("write"));
         assert!(svc.set_visible_on_all_workspaces(true).unwrap_err().contains("write denied"));
         assert!(!svc.settings().visible_on_all_workspaces);
+    }
+
+    #[test]
+    fn shows_every_widget_page_by_default() {
+        let all = Widgets { clock: true, pomodoro: true, timer: true };
+        assert_eq!(Settings::default().widgets, all);
+        assert_eq!(service(with_file(r#"{"always_on_top":true}"#)).settings().widgets, all, "old file");
+    }
+
+    #[test]
+    fn fills_a_missing_widget_with_its_default() {
+        let svc = service(with_file(r#"{"widgets":{"clock":false}}"#));
+        assert_eq!(svc.settings().widgets, Widgets { clock: false, pomodoro: true, timer: true });
+    }
+
+    #[test]
+    fn set_widget_visible_changes_only_that_widget_and_persists() {
+        let mut svc = service(MockFs::default());
+        svc.set_widget_visible("pomodoro", false).unwrap();
+        assert_eq!(svc.settings().widgets, Widgets { clock: true, pomodoro: false, timer: true });
+
+        svc.set_widget_visible("clock", false).unwrap();
+        svc.set_widget_visible("timer", false).unwrap();
+        let reopened = SettingsService::open(with_file(&saved(&svc).unwrap()), PathBuf::from(PATH));
+        assert_eq!(reopened.settings().widgets, Widgets { clock: false, pomodoro: false, timer: false });
+    }
+
+    #[test]
+    fn set_widget_visible_rejects_an_unknown_widget() {
+        let mut svc = service(MockFs::default());
+        assert_eq!(svc.set_widget_visible("calendar", false).unwrap_err(), "unknown page: calendar");
+        assert_eq!(saved(&svc), None);
+    }
+
+    #[test]
+    fn set_widget_visible_rolls_back_when_saving_fails() {
+        let mut svc = service(MockFs::failing("write"));
+        assert!(svc.set_widget_visible("timer", false).unwrap_err().contains("write denied"));
+        assert!(svc.settings().widgets.timer);
     }
 
     #[test]

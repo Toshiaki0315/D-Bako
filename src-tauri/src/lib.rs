@@ -168,7 +168,7 @@ fn migrate_legacy_launch_agent(app: &tauri::App) {
 
 /// 設定ウィンドウに見せる値。「起動時に実行する」は OS への登録状態そのものなので、保存せず毎回問い合わせる。
 #[derive(serde::Serialize)]
-struct SettingsView { always_on_top: bool, visible_on_all_workspaces: bool, launch_at_login: bool }
+struct SettingsView { always_on_top: bool, visible_on_all_workspaces: bool, launch_at_login: bool, widgets: settings::Widgets }
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> SettingsView {
@@ -176,6 +176,7 @@ fn get_settings(state: State<'_, AppState>) -> SettingsView {
     SettingsView {
         always_on_top: settings.always_on_top,
         visible_on_all_workspaces: settings.visible_on_all_workspaces,
+        widgets: settings.widgets,
         launch_at_login: login_item::is_enabled(&MainAppLoginItem),
     }
 }
@@ -193,6 +194,32 @@ fn set_always_on_top(enabled: bool, app: tauri::AppHandle, state: State<'_, AppS
     state.settings.lock().unwrap().set_always_on_top(enabled)?;
     let main = app.get_webview_window("main").ok_or("main window not found")?;
     main.set_always_on_top(enabled).map_err(|e| e.to_string())
+}
+
+/// メインウィンドウが並べる時計などのページ。
+#[tauri::command]
+fn get_widgets(state: State<'_, AppState>) -> settings::Widgets {
+    state.settings.lock().unwrap().settings().widgets.clone()
+}
+
+/// 時計などのページの表示・非表示を保存し、メインウィンドウにページを並べ直させる。
+#[tauri::command]
+fn set_widget_visible(widget: String, visible: bool, app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    state.settings.lock().unwrap().set_widget_visible(&widget, visible)?;
+    let main = app.get_webview_window("main").ok_or("main window not found")?;
+    main.emit("settings-changed", ()).map_err(|e| e.to_string())
+}
+
+/// ポモドーロ・タイマーの終了を、macOS の通知音で知らせる (鳴らし終わるのは待たない)。
+#[tauri::command]
+fn play_alert() -> Result<(), String> {
+    let mut child = std::process::Command::new("/usr/bin/afplay")
+        .arg("/System/Library/Sounds/Glass.aiff")
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    // 終わったプロセスが残らないよう、別のスレッドで後始末する
+    std::thread::spawn(move || { let _ = child.wait(); });
+    Ok(())
 }
 
 /// デスクトップ (操作スペース) を切り替えても、メインウィンドウを表示したままにする。全画面表示のアプリの上には出さない。
@@ -278,22 +305,22 @@ fn fit_window_to_grid(window: &tauri::WebviewWindow, cols: usize, rows: usize, (
     let (min_w, min_h) = window::min_size(cols, rows);
     window.set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))?;
     #[cfg(target_os = "macos")]
-    lock_aspect_ratio(window, cols, rows)?;
+    lock_aspect_ratio(window, window::aspect_ratio_at(width, cols, rows))?;
     window.set_size(tauri::LogicalSize::new(width, height))
 }
 
-/// リサイズ中も縦横比を保つ (tao には API が無いので NSWindow に直接設定する)。
+/// リサイズ中も、その幅でグリッドがちょうど収まる縦横比を保つ (tao には API が無いので NSWindow に直接設定する)。
+/// ちょうど収まる縦横比は幅によって変わるので、大きさが変わるたびに設定し直す。
 #[cfg(target_os = "macos")]
-fn lock_aspect_ratio(window: &tauri::WebviewWindow, cols: usize, rows: usize) -> tauri::Result<()> {
+fn lock_aspect_ratio(window: &tauri::WebviewWindow, ratio: f64) -> tauri::Result<()> {
     let window = window.clone();
-    let (w, h) = window::base_size(cols, rows);
     window.clone().run_on_main_thread(move || {
         use objc2_app_kit::NSWindow;
         use objc2_foundation::NSSize;
         let Ok(ptr) = window.ns_window() else { return };
         // SAFETY: ns_window() は生きている NSWindow を指し、ここはメインスレッドで実行される。
         let ns_window = unsafe { &*(ptr as *mut NSWindow) };
-        ns_window.setContentAspectRatio(NSSize::new(w, h));
+        ns_window.setContentAspectRatio(NSSize::new(ratio, 1.0));
     })
 }
 
@@ -309,8 +336,15 @@ pub fn run() {
             // 最小化などで 0 になる場合は覚えない
             tauri::WindowEvent::Resized(size) if size.width > 0 => {
                 let scale = window.scale_factor().unwrap_or(1.0);
+                let width = size.to_logical::<f64>(scale).width;
                 if let Some(state) = window.try_state::<AppState>() {
-                    state.settings.lock().unwrap().remember_window_width(size.to_logical::<f64>(scale).width);
+                    state.settings.lock().unwrap().remember_window_width(width);
+                    // グリッドの変更中 (状態をロック中) は、変更する側が縦横比を設定するので何もしない
+                    #[cfg(target_os = "macos")]
+                    if let (Ok(launcher), Some(main)) = (state.launcher.try_lock(), window.app_handle().get_webview_window("main")) {
+                        let (cols, rows) = (launcher.state().cols, launcher.state().rows);
+                        let _ = lock_aspect_ratio(&main, window::aspect_ratio_at(width, cols, rows));
+                    }
                 }
             }
             tauri::WindowEvent::CloseRequested { .. } => flush_settings(window),
@@ -347,6 +381,9 @@ pub fn run() {
             set_layout,
             set_always_on_top,
             set_visible_on_all_workspaces,
+            get_widgets,
+            set_widget_visible,
+            play_alert,
             set_launch_at_login,
             rename_app,
             remove_app,

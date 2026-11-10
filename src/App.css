@@ -1,6 +1,6 @@
-/* 1rem = ウィンドウ幅の 1/40 (幅 640px で 16px)。寸法をすべて rem で書くことで、
-   縦横比を固定したウィンドウの拡大・縮小に合わせて UI 全体が比例して拡縮する */
-html { font-size: calc(100vw / 40); }
+/* 1rem = 16px × (ウィンドウ幅 ÷ そのグリッドの基準の幅)。--layout-width は App.tsx が横の数から設定する (4 × 2 なら 642)。
+   寸法をすべて rem で書くことで、どのグリッドでも基準サイズのときと同じ比率の余白で、ウィンドウに合わせて拡縮する */
+html { font-size: calc(100vw * 16 / var(--layout-width, 642)); }
 html, body, #root { height: 100%; }
 body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #1e1e1e; color: #fff; user-select: none; overflow: hidden; }
 .container { display: flex; flex-direction: column; height: 100%; box-sizing: border-box; padding: 0 0.75rem 0.875rem; }
@@ -72,3 +72,18 @@ body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "S
 .load-error { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; text-align: center; color: #ff8a80; font-size: 0.875rem; }
 .load-error p { margin: 0; }
 button.reload { width: auto; height: auto; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; }
+/* 時計・ポモドーロ・タイマーのページ。.grid-area を寸法の基準 (コンテナ) にして、ウィンドウに合わせて拡縮する */
+[hidden] { display: none !important; }
+.widget-holder { width: 100%; height: 100%; }
+.widget-page { box-sizing: border-box; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4cqh; overflow: hidden; }
+.widget-display { font-size: min(20cqw, 34cqh); font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.widget-seconds { margin-left: 0.15em; font-size: 0.4em; color: #999; }
+.widget-sub { margin: 0; font-size: max(min(4.5cqw, 8cqh), 11px); color: #bbb; }
+.widget-done { color: #ffd27f; }
+.widget-phase { margin: 0; font-size: max(min(5cqw, 9cqh), 11px); font-weight: 600; }
+.widget-phase.work { color: #ff8a80; }
+.widget-phase.break { color: #81c995; }
+.widget-controls { display: flex; flex-wrap: wrap; justify-content: center; gap: max(1.5cqw, 4px); }
+.widget-controls button { padding: max(1.4cqh, 3px) max(3cqw, 8px); border: none; border-radius: 999px; background: #3a3a3a; color: #fff; font-size: max(min(4cqw, 7cqh), 11px); cursor: pointer; }
+.widget-controls button:hover { background: #4a4a4a; }
+.widget-controls button:disabled { background: #252525; color: #555; cursor: not-allowed; }

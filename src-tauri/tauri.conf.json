@@ -24,8 +24,8 @@
     "windows": [
       {
         "title": "\u9053\u5177\u7bb1",
-        "width": 640,
-        "height": 410,
+        "width": 642,
+        "height": 406,
         "resizable": true,
         "maximizable": false,
         "titleBarStyle": "Overlay",

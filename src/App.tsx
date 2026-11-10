@@ -9,7 +9,11 @@ import { contextMenuPosition } from "./lib/contextMenu";
 import { LOAD_RETRY_DELAYS, retry } from "./lib/retry";
 import { isDragGesture, isOutsideWindow, resolveItemDrop, slotIndexOf, toClientPoint } from "./lib/drag";
 import type { Point } from "./lib/drag";
+import { layoutWidth } from "./lib/layout";
+import { buildPages } from "./lib/pages";
+import type { WidgetKind, Widgets } from "./lib/pages";
 import { AppIcon } from "./components/AppIcon";
+import { ClockPage, PomodoroPage, TimerPage } from "./components/WidgetPages";
 
 type AppItem = { path: string; name: string; kind?: "app" | "url"; icon?: string };
 type LauncherState = { pages: (AppItem | null)[][]; max_pages: number; cols: number; rows: number };
@@ -18,6 +22,9 @@ type TipState = { name: string; x: number; y: number };
 type MenuState = { slot: number; x: number; y: number };
 /** ドラッグ中のアイテムのスロット、ポインタの位置、その下にあるスロット。 */
 type DragState = { slot: number; x: number; y: number; over: number | null };
+
+/** ランチャーの後ろに並ぶ時計などのページ。 */
+const WIDGET_PAGES: Record<WidgetKind, () => JSX.Element> = { clock: ClockPage, pomodoro: PomodoroPage, timer: TimerPage };
 
 /** 右クリックメニューの大きさ (px)。App.css の .context-menu と合わせる。 */
 const CONTEXT_MENU_SIZE = { width: 150, height: 62 };
@@ -118,6 +125,8 @@ export default function App() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameSlot, setRenameSlot] = useState<number | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  // 時計などのページのうち表示するもの (設定ウィンドウで変わると Rust 側から知らされる)
+  const [widgets, setWidgets] = useState<Widgets | undefined>(undefined);
   // ドラッグを終えた直後に届くクリックで起動しないようにする
   const suppressClick = useRef(false);
 
@@ -147,10 +156,37 @@ export default function App() {
     setLoadAttempt((n) => n + 1);
   }
 
-  useEffect(() => {
-    // 最初の読み込みは上の effect が受け持つ。ページを移ったときは読み直す。
-    if (state) fetchState().catch(() => {});
+  // ランチャーのページの後ろに時計などのページを並べる。ランチャー用の操作は、ランチャーのページでだけ受け付ける。
+  const pages = state ? buildPages(state.max_pages, widgets) : [];
+  const page = pages[Math.min(currentPage, pages.length - 1)];
+  const launcherPage = page?.kind === "launcher" ? page.index : null;
 
+  // UI の拡縮の基準 (App.css の html の font-size) を、今のグリッドの基準の幅に合わせる
+  const baseWidth = state ? layoutWidth(state.cols, state.rows) : null;
+  useEffect(() => {
+    if (baseWidth !== null) document.documentElement.style.setProperty("--layout-width", String(baseWidth));
+  }, [baseWidth]);
+
+  // ページが減って今のページが無くなったら、最後のページへ移る
+  useEffect(() => {
+    if (pages.length > 0) setCurrentPage((p) => Math.min(p, pages.length - 1));
+  }, [pages.length]);
+
+  // 最初の読み込みは上の effect が受け持つ。ページを移ったときは読み直す。
+  useEffect(() => {
+    if (state) fetchState().catch(() => {});
+  }, [currentPage]);
+
+  useEffect(() => {
+    const fetchWidgets = () => invoke<Widgets>("get_widgets").then(setWidgets).catch(() => {});
+    fetchWidgets();
+    const unlisten = listen("settings-changed", fetchWidgets);
+    return () => { unlisten.then(f => f()); };
+  }, []);
+
+  useEffect(() => {
+    if (launcherPage === null) return;
+    const pageIdx = launcherPage;
     // Tauri v2 のファイルドロップは "tauri://drag-drop" で届く (旧名 "tauri://drop" では届かない)
     const unlisten = listen('tauri://drag-drop', async (event: any) => {
       const paths: string[] = event.payload.paths ?? [];
@@ -161,28 +197,30 @@ export default function App() {
       const shortcut = pickShortcutFile(paths);
       if (appPath) {
         await register(() => slotIdx === null
-          ? invoke("add_app_to_first_empty", { pageIdx: currentPage, path: appPath })
-          : invoke("insert_app", { pageIdx: currentPage, slotIdx, path: appPath }));
+          ? invoke("add_app_to_first_empty", { pageIdx, path: appPath })
+          : invoke("insert_app", { pageIdx, slotIdx, path: appPath }));
       } else if (shortcut) {
         await register(() => slotIdx === null
-          ? invoke("add_url_file_to_first_empty", { pageIdx: currentPage, path: shortcut })
-          : invoke("insert_url_file", { pageIdx: currentPage, slotIdx, path: shortcut }));
+          ? invoke("add_url_file_to_first_empty", { pageIdx, path: shortcut })
+          : invoke("insert_url_file", { pageIdx, slotIdx, path: shortcut }));
       }
     });
     return () => { unlisten.then(f => f()); };
-  }, [currentPage]);
+  }, [launcherPage]);
 
   // URL を貼り付け (Cmd+V) ると、現在のページの最初の空きスロットに登録する。入力欄への貼り付けは対象外。
   useEffect(() => {
+    if (launcherPage === null) return;
+    const pageIdx = launcherPage;
     const onPaste = (e: ClipboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
       const text = e.clipboardData?.getData("text") ?? "";
       if (!looksLikeUrl(text)) return;
-      register(() => invoke("add_url_to_first_empty", { pageIdx: currentPage, input: text.trim() }));
+      register(() => invoke("add_url_to_first_empty", { pageIdx, input: text.trim() }));
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-  }, [currentPage]);
+  }, [launcherPage]);
 
   // 設定ウィンドウでグリッドの大きさやページ数が変わると、Rust 側から知らされる
   useEffect(() => {
@@ -190,11 +228,9 @@ export default function App() {
     return () => { unlisten.then(f => f()); };
   }, []);
 
-  /** 最新の状態を読み直す。ページが減って今のページが無くなったら最後のページへ移る。 */
+  /** 最新の状態を読み直す。 */
   async function fetchState() {
-    const s = await invoke<LauncherState>("get_state");
-    setState(s);
-    setCurrentPage(p => Math.min(p, s.max_pages - 1));
+    setState(await invoke<LauncherState>("get_state"));
   }
 
   async function handleLaunch(app: AppItem) {
@@ -215,7 +251,7 @@ export default function App() {
     if (e.button !== 0) return;
     suppressClick.current = false;
     const start = { x: e.clientX, y: e.clientY };
-    const pageIdx = currentPage;
+    const pageIdx = launcherPage ?? 0;
     let dragging = false;
 
     const onMove = (ev: MouseEvent) => {
@@ -254,14 +290,14 @@ export default function App() {
   }
 
   async function submitUrl(slotIdx: number, input: string) {
-    await invoke("add_url_to_slot", { pageIdx: currentPage, slotIdx, input });
+    await invoke("add_url_to_slot", { pageIdx: launcherPage ?? 0, slotIdx, input });
     setError(null);
     await fetchState();
     setDialogSlot(null);
   }
 
   async function submitRename(slotIdx: number, name: string) {
-    await invoke("rename_app", { pageIdx: currentPage, slotIdx, name });
+    await invoke("rename_app", { pageIdx: launcherPage ?? 0, slotIdx, name });
     await fetchState();
     setRenameSlot(null);
   }
@@ -279,14 +315,14 @@ export default function App() {
   }
   if (!state) return <div>Loading...</div>;
 
-  const currentSlots = state.pages[currentPage];
+  const currentSlots = launcherPage === null ? [] : state.pages[launcherPage];
   const dragged = drag ? currentSlots[drag.slot] : null;
 
   return (
     <div className="container">
       <div className="drag-region" data-tauri-drag-region />
       <div className="grid-area">
-        <div className="grid" style={{ "--cols": state.cols, "--rows": state.rows } as CSSProperties}>
+        {launcherPage !== null && <div className="grid" style={{ "--cols": state.cols, "--rows": state.rows } as CSSProperties}>
           {currentSlots.map((app, i) => (
             <div
               key={i}
@@ -303,7 +339,12 @@ export default function App() {
               {app ? <AppIcon key={app.path} path={app.path} name={app.name} kind={app.kind} icon={app.icon} /> : <div className="slot-number">{i + 1}</div>}
             </div>
           ))}
-        </div>
+        </div>}
+        {/* 時計などのページは、ほかのページを見ている間も隠すだけにして、タイマーを動かし続ける */}
+        {pages.flatMap((p) => p.kind === "launcher" ? [] : [p.kind]).map((kind) => {
+          const Widget = WIDGET_PAGES[kind];
+          return <div key={kind} className="widget-holder" hidden={page?.kind !== kind}><Widget /></div>;
+        })}
       </div>
       {tip && <Tooltip {...tip} />}
       {drag && dragged && (
@@ -313,9 +354,9 @@ export default function App() {
       )}
       {error && <p role="alert" className="error">{error}</p>}
       <div className="pager">
-        <button aria-label="Previous page" onClick={() => setCurrentPage(p => wrapPage(p - 1, state.max_pages))} disabled={state.max_pages <= 1}><Chevron direction="left" /></button>
-        <span>{currentPage + 1} / {state.max_pages}</span>
-        <button aria-label="Next page" onClick={() => setCurrentPage(p => wrapPage(p + 1, state.max_pages))} disabled={state.max_pages <= 1}><Chevron direction="right" /></button>
+        <button aria-label="Previous page" onClick={() => setCurrentPage(p => wrapPage(p - 1, pages.length))} disabled={pages.length <= 1}><Chevron direction="left" /></button>
+        <span>{Math.min(currentPage, pages.length - 1) + 1} / {pages.length}</span>
+        <button aria-label="Next page" onClick={() => setCurrentPage(p => wrapPage(p + 1, pages.length))} disabled={pages.length <= 1}><Chevron direction="right" /></button>
       </div>
       {dialogSlot !== null && (
         <TextDialog
@@ -331,7 +372,7 @@ export default function App() {
           x={menu.x}
           y={menu.y}
           onRename={() => { setRenameSlot(menu.slot); setMenu(null); }}
-          onRemove={() => { setMenu(null); register(() => invoke("remove_app", { pageIdx: currentPage, slotIdx: menu.slot }), "解除できません"); }}
+          onRemove={() => { setMenu(null); register(() => invoke("remove_app", { pageIdx: launcherPage ?? 0, slotIdx: menu.slot }), "解除できません"); }}
           onClose={() => setMenu(null)}
         />
       )}

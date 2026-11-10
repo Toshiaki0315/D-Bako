@@ -25,7 +25,7 @@ impl AppItem {
 pub const MAX_NAME_CHARS: usize = 100;
 /// グリッドの横・縦の数と、ページ数の上限。
 pub const MAX_COLS: usize = 8;
-pub const MAX_ROWS: usize = 6;
+pub const MAX_ROWS: usize = 8;
 pub const MAX_PAGES: usize = 10;
 /// グリッドを保存していない古いファイルは、この大きさ (4 × 2) として読む。
 pub const DEFAULT_COLS: usize = 4;
@@ -394,6 +394,14 @@ mod tests {
         assert_eq!(s.set_layout(2, 2, 1), Err("Not enough slots for the registered items".to_string()));
         assert_eq!((s.cols, s.rows, s.max_pages), (4, 2, 1));
         assert_eq!(s.pages, before);
+    }
+    #[test] fn test_set_layout_allows_up_to_8_rows_and_8_columns() {
+        assert_eq!((MAX_COLS, MAX_ROWS), (8, 8));
+        let mut s = LauncherState::new(1);
+        s.set_layout(1, 8, 2).unwrap();
+        assert_eq!(s.pages[0].len(), 8);
+        s.set_layout(8, 8, 1).unwrap();
+        assert_eq!(s.pages[0].len(), 64);
     }
     #[test] fn test_set_layout_rejects_an_out_of_range_layout() {
         let mut s = LauncherState::new(1);

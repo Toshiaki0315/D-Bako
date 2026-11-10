@@ -1,21 +1,30 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import type { WidgetKind, Widgets } from "../lib/pages";
 
-type Settings = { always_on_top: boolean; visible_on_all_workspaces: boolean; launch_at_login: boolean };
+type Toggles = { always_on_top: boolean; visible_on_all_workspaces: boolean; launch_at_login: boolean };
+type Settings = Toggles & { widgets?: Widgets };
 type Layout = { cols: number; rows: number; pages: number };
 
 /** グリッドの横・縦の数とページ数の選択肢 (Rust 側の MAX_COLS / MAX_ROWS / MAX_PAGES と合わせる)。 */
 const LAYOUT_FIELDS: { key: keyof Layout; label: string; max: number }[] = [
   { key: "cols", label: "横の数", max: 8 },
-  { key: "rows", label: "縦の数", max: 6 },
+  { key: "rows", label: "縦の数", max: 8 },
   { key: "pages", label: "ページ数", max: 10 },
 ];
 
 /** チェックボックスで切り替える項目と、変更を反映するコマンド。 */
-const TOGGLES: { key: keyof Settings; label: string; command: string }[] = [
+const TOGGLES: { key: keyof Toggles; label: string; command: string }[] = [
   { key: "always_on_top", label: "常に前に表示", command: "set_always_on_top" },
   { key: "visible_on_all_workspaces", label: "すべてのデスクトップに表示", command: "set_visible_on_all_workspaces" },
   { key: "launch_at_login", label: "起動時に実行する", command: "set_launch_at_login" },
+];
+
+/** ランチャーの後ろに並べるページ (並びも同じ順)。 */
+const WIDGET_TOGGLES: { key: WidgetKind; label: string }[] = [
+  { key: "clock", label: "時計" },
+  { key: "pomodoro", label: "ポモドーロ" },
+  { key: "timer", label: "タイマー" },
 ];
 
 /** 設定ウィンドウの中身。変更はその場で反映・保存される。 */
@@ -31,11 +40,19 @@ export function SettingsView() {
 
   /** 先に見た目を切り替え、失敗したら実際の状態を読み直す
    *  (ログイン項目は登録できても「許可待ち」でエラーになることがあり、単純に元へ戻すと実際とずれる)。 */
-  async function toggle(key: keyof Settings, command: string, enabled: boolean) {
-    setSettings((s) => s && { ...s, [key]: enabled });
+  async function toggle(key: keyof Toggles, command: string, enabled: boolean) {
+    await apply((s) => ({ ...s, [key]: enabled }), () => invoke(command, { enabled }));
+  }
+
+  async function toggleWidget(widget: WidgetKind, visible: boolean) {
+    await apply((s) => ({ ...s, widgets: s.widgets && { ...s.widgets, [widget]: visible } }), () => invoke("set_widget_visible", { widget, visible }));
+  }
+
+  async function apply(change: (s: Settings) => Settings, save: () => Promise<unknown>) {
+    setSettings((s) => s && change(s));
     setError(null);
     try {
-      await invoke(command, { enabled });
+      await save();
     } catch (err) {
       setError(String(err));
       setSettings(await invoke<Settings>("get_settings"));
@@ -70,6 +87,19 @@ export function SettingsView() {
           ))}
         </div>
       </fieldset>
+      {settings.widgets && (
+        <fieldset className="settings-group">
+          <legend>表示するページ</legend>
+          <div className="settings-box">
+            {WIDGET_TOGGLES.map(({ key, label }) => (
+              <label key={key} className="settings-row">
+                <span>{label}</span>
+                <input type="checkbox" checked={settings.widgets![key]} onChange={(e) => toggleWidget(key, e.target.checked)} />
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
       {layout && (
         <fieldset className="settings-group">
           <legend>グリッド</legend>

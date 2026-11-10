@@ -7,6 +7,7 @@ const unlistenMock = vi.fn();
 type DropPayload = { paths?: string[]; position?: { x: number; y: number } };
 let dropHandler: ((event: { payload: DropPayload }) => Promise<void>) | null;
 let changedHandler: (() => void) | null;
+let settingsHandler: (() => void) | null;
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invokeMock(...args),
@@ -17,6 +18,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (name: string, handler: typeof dropHandler) => {
     if (name === "tauri://drag-drop") dropHandler = handler;
     if (name === "launcher-changed") changedHandler = handler as unknown as () => void;
+    if (name === "settings-changed") settingsHandler = handler as unknown as () => void;
     return unlistenMock;
   }),
 }));
@@ -705,6 +707,19 @@ describe("App grid layout", () => {
     expect(document.querySelectorAll(".slot")).toHaveLength(9);
   });
 
+  it("scales the whole UI by the window width relative to the layout's base width", async () => {
+    await renderApp(makeState(2, {}, 8, 1));
+    expect(document.documentElement.style.getPropertyValue("--layout-width")).toBe("1266");
+  });
+
+  it("updates the scale when the layout is changed from the settings window", async () => {
+    await renderApp();
+    expect(document.documentElement.style.getPropertyValue("--layout-width")).toBe("642");
+    mockBackend(makeState(2, {}, 1, 6));
+    await act(async () => { changedHandler!(); });
+    expect(document.documentElement.style.getPropertyValue("--layout-width")).toBe("174");
+  });
+
   it("reloads the state when the layout is changed from the settings window", async () => {
     await renderApp();
     mockBackend(makeState(2, {}, 5, 1));
@@ -793,5 +808,95 @@ describe("App startup loading", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     await screen.findByRole("alert");
     expect(document.querySelector("[data-tauri-drag-region]")).not.toBeNull();
+  });
+});
+
+describe("App widget pages", () => {
+  type Widgets = { clock: boolean; pomodoro: boolean; timer: boolean };
+  const next = () => fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+  const visiblePage = (name: string) => screen.getByRole("region", { name });
+
+  function mockWithWidgets(state: ReturnType<typeof makeState>, widgets: () => Widgets) {
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_state") return state;
+      if (cmd === "get_widgets") return widgets();
+      return undefined;
+    });
+  }
+
+  async function renderWithWidgets(widgets: Widgets, state = makeState(2, { "0:0": foo })) {
+    let current = widgets;
+    mockWithWidgets(state, () => current);
+    render(<App />);
+    await screen.findByText(`1 / ${state.max_pages + Object.values(widgets).filter(Boolean).length}`);
+    return (w: Widgets) => { current = w; };
+  }
+
+  beforeEach(() => { settingsHandler = null; });
+
+  it("adds the visible widget pages after the launcher pages and wraps around", async () => {
+    await renderWithWidgets({ clock: true, pomodoro: false, timer: true });
+    expect(screen.getByRole("button", { name: "Foo" })).toBeInTheDocument();
+
+    next();
+    next();
+    expect(screen.getByText("3 / 4")).toBeInTheDocument();
+    expect(visiblePage("時計")).toBeVisible();
+    expect(document.querySelector(".grid")).toBeNull();
+
+    next();
+    expect(visiblePage("タイマー")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "時計" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "ポモドーロ" , hidden: true })).toBeNull();
+
+    next();
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Foo" })).toBeInTheDocument();
+  });
+
+  it("keeps the widget pages mounted while another page is shown, so timers keep running", async () => {
+    await renderWithWidgets({ clock: false, pomodoro: true, timer: true });
+    const pomodoro = screen.getByRole("region", { name: "ポモドーロ", hidden: true });
+    expect(pomodoro).not.toBeVisible();
+    next();
+    next();
+    expect(screen.getByRole("region", { name: "ポモドーロ" })).toBe(pomodoro);
+  });
+
+  it("enables paging when there is one launcher page but widget pages too", async () => {
+    await renderWithWidgets({ clock: true, pomodoro: false, timer: false }, makeState(1));
+    expect(screen.getByRole("button", { name: "Next page" })).toBeEnabled();
+  });
+
+  it("rebuilds the pages when the settings window changes them", async () => {
+    const setWidgets = await renderWithWidgets({ clock: true, pomodoro: true, timer: true });
+    setWidgets({ clock: false, pomodoro: false, timer: true });
+    await act(async () => { settingsHandler!(); });
+    expect(await screen.findByText("1 / 3")).toBeInTheDocument();
+  });
+
+  it("moves to the last page when the page shown is hidden", async () => {
+    const setWidgets = await renderWithWidgets({ clock: true, pomodoro: true, timer: true });
+    for (let i = 0; i < 4; i++) next();
+    expect(screen.getByText("5 / 5")).toBeInTheDocument();
+    setWidgets({ clock: true, pomodoro: false, timer: false });
+    await act(async () => { settingsHandler!(); });
+    expect(await screen.findByText("3 / 3")).toBeInTheDocument();
+    expect(visiblePage("時計")).toBeVisible();
+  });
+
+  it("ignores dropped apps and pasted URLs on a widget page", async () => {
+    await renderWithWidgets({ clock: true, pomodoro: false, timer: false });
+    next();
+    next();
+    // 時計のページではドロップを受け付けない (受け付ける処理を登録しない)
+    dropHandler = null;
+    await act(async () => {});
+    expect(unlistenMock).toHaveBeenCalled();
+    expect(dropHandler).toBeNull();
+    fireEvent.paste(window, { clipboardData: { getData: () => "https://example.com" } });
+    await act(async () => {});
+    expect(invokeMock).not.toHaveBeenCalledWith("add_app_to_first_empty", expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith("add_url_to_first_empty", expect.anything());
   });
 });

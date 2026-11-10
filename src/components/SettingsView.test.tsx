@@ -211,14 +211,14 @@ describe("SettingsView layout", () => {
     expect(within(grid).getAllByRole("combobox")).toHaveLength(3);
   });
 
-  it("offers 1-8 columns, 1-6 rows and 1-10 pages", async () => {
+  it("offers 1-8 columns, 1-8 rows and 1-10 pages", async () => {
     mockLayout({ cols: 4, rows: 2, pages: 10 });
     render(<SettingsView />);
     const values = (name: string) =>
       Array.from(screen.getByRole("combobox", { name }).querySelectorAll("option"), (o) => o.value);
     await screen.findByRole("combobox", { name: "横の数" });
     expect(values("横の数")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
-    expect(values("縦の数")).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(values("縦の数")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8"]);
     expect(values("ページ数")).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
   });
 
@@ -239,5 +239,56 @@ describe("SettingsView layout", () => {
     await userEvent.selectOptions(rows, "1");
     expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: Not enough slots for the registered items");
     expect(rows).toHaveValue("2");
+  });
+});
+
+describe("SettingsView widget pages", () => {
+  type Widgets = { clock: boolean; pomodoro: boolean; timer: boolean };
+
+  function mockWidgets(widgets: Widgets | undefined, set: (args: { widget: string; visible: boolean }) => Promise<void> = async () => {}) {
+    invokeMock.mockImplementation(async (cmd: string, args?: { widget: string; visible: boolean }) => {
+      if (cmd === "get_settings") return { always_on_top: false, visible_on_all_workspaces: false, launch_at_login: false, widgets };
+      if (cmd === "set_widget_visible") return set(args!);
+      return undefined;
+    });
+  }
+
+  it("shows which widget pages are visible in their own group", async () => {
+    mockWidgets({ clock: true, pomodoro: false, timer: true });
+    render(<SettingsView />);
+    const group = await screen.findByRole("group", { name: "表示するページ" });
+    expect(within(group).getByRole("checkbox", { name: "時計" })).toBeChecked();
+    expect(within(group).getByRole("checkbox", { name: "ポモドーロ" })).not.toBeChecked();
+    expect(within(group).getByRole("checkbox", { name: "タイマー" })).toBeChecked();
+  });
+
+  it("shows or hides one page at a time", async () => {
+    mockWidgets({ clock: true, pomodoro: true, timer: true });
+    render(<SettingsView />);
+    const pomodoro = await screen.findByRole("checkbox", { name: "ポモドーロ" });
+
+    await userEvent.click(pomodoro);
+    expect(invokeMock).toHaveBeenCalledWith("set_widget_visible", { widget: "pomodoro", visible: false });
+    expect(pomodoro).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "時計" })).toBeChecked();
+
+    await userEvent.click(pomodoro);
+    expect(invokeMock).toHaveBeenCalledWith("set_widget_visible", { widget: "pomodoro", visible: true });
+    expect(pomodoro).toBeChecked();
+  });
+
+  it("goes back and shows the reason when saving fails", async () => {
+    mockWidgets({ clock: true, pomodoro: true, timer: true }, async () => { throw "write denied"; });
+    render(<SettingsView />);
+    await userEvent.click(await screen.findByRole("checkbox", { name: "タイマー" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("変更できません: write denied");
+    expect(screen.getByRole("checkbox", { name: "タイマー" })).toBeChecked();
+  });
+
+  it("hides the group when the backend does not report the pages", async () => {
+    mockWidgets(undefined);
+    render(<SettingsView />);
+    await screen.findByRole("checkbox", { name: "常に前に表示" });
+    expect(screen.queryByRole("group", { name: "表示するページ" })).not.toBeInTheDocument();
   });
 });
